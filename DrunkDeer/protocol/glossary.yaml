@@ -1,0 +1,76 @@
+message: >
+  A 64-byte HID frame exchanged with the keyboard. The hardware interface
+  prepends one byte (the HID report identifier) on write and strips it on
+  read; this byte carries no protocol meaning and is not included in message
+  definitions.
+
+travel: >
+  The current distance a key has moved from its resting position, measured
+  in millimetres. A live reading from the Hall-effect sensors. Reported as
+  a signed integer; higher values indicate deeper presses.
+
+actuation_point: >
+  The configured depth in millimetres at which a key registers as pressed.
+  Each key has its own actuation point, stored per profile.
+
+profile: >
+  A complete set of per-key configuration stored on the keyboard. Includes
+  actuation points and key behaviour settings. Does not include RGB lighting.
+  The keyboard supports multiple profiles that can be created and switched
+  between using DrunkDeer software.
+
+layout_index: >
+  A key's address in the firmware's key space, ranging from 0 to 126.
+  Not every index corresponds to a physical key on every keyboard model.
+
+standard_precision: >
+  Key-point encoding at 0.1 mm resolution (B6 × 10, 1 unit = 0.1 mm) using command 0xB6.
+  Supported on all models. Range: 0.2–3.3 mm. Dead-zone: raw < 2 units.
+
+kun_precision: >
+  Key-point encoding at 0.01 mm resolution (B6 × 100, 1 unit = 0.01 mm) using command 0xB6.
+  Activated when a model running a Kun-capable firmware version detects a Kun switch.
+  Uses the same B6 wire format as standard_precision; only the mm↔unit scale changes.
+  Range: 0.2–2.0 mm. Dead-zone: raw < 2 units. B7 travel stream: raw / 100 -> mm.
+  Supported conditionally on A75, A75 Pro, G75, G65, G60 (firmware-version-gated), and
+  unconditionally on G65 m1/m2/m3 and several G60 variants.
+
+high_precision: >
+  Key-point encoding at 0.005 mm (1/200 mm) resolution using command 0xFD (u16le per key).
+  Supported on the A75 Ultra, A75 Master, and X60. Range: 0.2–3.3 mm.
+  Dead-zone: raw < 40 units (0.2 mm). FD stream: raw / 200 -> mm.
+
+downstroke_point: >
+  The configured depth in millimetres at which a key action is triggered on
+  the way down. Distinct from the actuation point; used in rapid trigger and
+  advanced key modes.
+
+upstroke_point: >
+  The configured depth in millimetres at which a key action is triggered on
+  the way up (release). Paired with the downstroke point in rapid trigger mode.
+
+func_block: >
+  A 64-byte profile configuration block stored on the keyboard. Contains
+  report rate, debounce, lock flags, lighting settings, and mode flags.
+  Read and written via the extended gateway (0x55) sub-commands 0x05 and 0x06.
+
+key_trigger: >
+  The per-key rapid trigger configuration stored on the keyboard. Each key
+  has an 8-byte entry covering switch type, key mode, actuation depth,
+  RT press/release thresholds, and deadzones. Accessed via extended gateway
+  sub-commands 0xA0 (read) and 0xA1 (write).
+
+le9: >
+  A 9-bit little-endian encoding used for key_trigger depth values.
+  The low 8 bits are stored in one byte; bit 0 of the next byte holds the
+  9th bit. Stored values are (raw - 1); add 1 after decoding.
+
+rgb_entry: >
+  A 4-byte record within an RgbKeyDataPacket describing one key's colour.
+  Layout: [layout_index | 0x80, R, G, B]. Up to 13 entries per packet.
+
+extended_gateway: >
+  The 0x55 command family that provides read and write access to the
+  keyboard's internal memory regions. Sub-commands select the region;
+  a checksum and address envelope wrap each chunk. All responses use
+  the 0xAA acknowledgement byte.

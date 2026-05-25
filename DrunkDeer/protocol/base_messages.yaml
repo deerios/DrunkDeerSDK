@@ -1,0 +1,337 @@
+messages:
+
+  IdentityRequest:
+    direction: request
+    header: [0xA0, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00]
+    padding_to: 64
+
+  IdentityResponse:
+    direction: response
+    header: [0xA0, 0x02, 0x00]
+    payload:
+      _reserved_pre:                bytes[1]
+      model:                        bytes[3]
+      _reserved_a:                  bytes[3]
+      firmware_version:             u8
+      _reserved_b:                  bytes[4]
+      turbo_value:                  u8
+      rapid_trigger_enabled:        u8
+      _reserved_c:                  bytes[1]
+      rapid_trigger_plus_enabled:   u8
+      last_win_value:               u8
+      _reserved_d:                  bytes[14]
+      rapid_trigger_auto_match:     u8
+      auto_match_mode:              u8
+      last_win_replace:             u8
+    padding_to: 64
+
+  TravelRequest:
+    direction: request
+    header: [0xB6, 0x03, 0x01]
+    padding_to: 64
+
+  TravelResponse:
+    direction: response
+    header: [0xB7]
+    payload:
+      _reserved:    bytes[2]
+      packet_index: u8
+      travel:       i8[59]
+    padding_to: 64
+
+  WriteActuationPointStandard:
+    direction: request
+    header: [0xB6, 0x01, 0x00]
+    payload:
+      packet_index: u8
+      key_values:   bytes[59]
+    padding_to: 64
+
+  WriteDownstrokePointStandard:
+    direction: request
+    header: [0xB6, 0x04, 0x00]
+    payload:
+      packet_index: u8
+      key_values:   bytes[59]
+    padding_to: 64
+
+  WriteUpstrokePointStandard:
+    direction: request
+    header: [0xB6, 0x05, 0x00]
+    payload:
+      packet_index: u8
+      key_values:   bytes[59]
+    padding_to: 64
+
+  # Acknowledges all three standard-precision key-point writes (actuation,
+  # downstroke, upstroke). The keyboard echoes the command byte 0xB6.
+  WriteKeyPointAcknowledgeStandard:
+    direction: response
+    header: [0xB6]
+    padding_to: 64
+
+  # Sets global Rapid Trigger, Turbo, Last Win / Rapid Trigger mode, and Rapid Trigger
+  # match in a single packet. Sent with ACK expected. Turbo and keystroke tracking are
+  # mutually exclusive at the software level; the firmware does not enforce this.
+  CommonConfig:
+    direction: request
+    header: [0xB5, 0x00, 0x1E, 0x01, 0x00, 0x00, 0x01]
+    payload:
+      turbo_mode:                        u8
+      rapid_trigger_mode:                u8
+      _reserved:                         bytes[1]
+      last_win_rapid_trigger_mode:       u8
+      rapid_trigger_auto_match:          u8
+    padding_to: 64
+
+  CommonConfigAcknowledge:
+    direction: response
+    header: [0xB5]
+    padding_to: 64
+
+  # Enables or disables the continuous key travel depth stream.
+  # When enabled, the keyboard emits TravelResponse (0xB7) or high-precision
+  # KeyTravelHighPrecision (0xFD 0x06) packets at the polling rate.
+  # DDSharp sends this once per frame (enabled=1) and reads three responses;
+  # other implementations hold the stream open for continuous polling.
+  SetKeystrokeTracking:
+    direction: request
+    header: [0xB6, 0x03]
+    payload:
+      enabled: u8
+    padding_to: 64
+
+  # Sets the active Last Win / Rapid Trigger mode. Fire-and-forget (no ACK).
+  SetLastWinRapidTriggerMode:
+    direction: request
+    header: [0xFC, 0x0A]
+    payload:
+      mode: u8
+    padding_to: 64
+
+  # Enables or disables the Last Win Replace feature. Fire-and-forget.
+  SetLastWinReplace:
+    direction: request
+    header: [0xFC, 0x0B]
+    payload:
+      enabled: u8
+    padding_to: 64
+
+  # Writes the full Last Win pair table to the keyboard.
+  # Each pair entry is 4 bytes: [main_slot, trigger_slot, 0x00, 0x00].
+  # main_slot and trigger_slot are firmware layout indices (0-125).
+  # A single user-visible pair expands to two firmware entries (A->B and B->A).
+  CreateLwPairs:
+    direction: request
+    header: [0xFC, 0x01, 0x00]
+    payload:
+      pair_count: u8
+      pairs:
+        element:   LastWinPairEntry
+        max_count: 14
+    padding_to: 64
+
+  # Sets auto match mode threshold. Fire-and-forget. 255 = off.
+  SetAutoMatchMode:
+    direction: request
+    header: [0xFD, 0x0C]
+    payload:
+      mode: u8
+    padding_to: 64
+
+  # Declares an RTP authority slot. Sent before each RTPAuthorityDownload.
+  # rtp_number is a sequential 1-based index scoped to the current operation.
+  RTPAuthority:
+    direction: request
+    header: [0xA7]
+    payload:
+      rtp_number: u8
+      _reserved:  bytes[1]
+      _const:     [0x2B, 0x01]
+    padding_to: 64
+
+  # Downloads the key assignment for an RTP authority slot.
+  # key_code is written to two positions (bytes 38 and 43 of the 64-byte frame);
+  # the transport layer must duplicate the value into key_code_b.
+  RTPAuthorityDownload:
+    direction: request
+    header: [0xA8]
+    payload:
+      rtp_number: u8
+      _const_a:   [0x01, 0x01, 0x01, 0x26, 0x01]
+      _reserved:  bytes[30]
+      _const_b:   [0x02]
+      key_code:   u8
+      _const_c:   [0x01, 0x00, 0x6D, 0x03]
+      key_code_b: u8
+    padding_to: 64
+
+  # Sent immediately before the RTP authority batch. Signals the firmware
+  # to clear the upper RTP authority table before new entries are written.
+  ClearRtpUpper:
+    direction: request
+    header: [0xAA, 0x00, 0x01]
+    padding_to: 64
+
+  # One packet in the 42-packet remap stream (14 packets × 3 layers).
+  # Each packet carries up to 9 key remap entries (6 bytes each).
+  # The entries region is followed by fixed tail marker 0xA5.
+  # layer_group: 1 = default, 2 = Fn1, 3 = Fn2.
+  KeyRemapPacket:
+    direction: request
+    header: [0xA0, 0x02, 0x04]
+    payload:
+      packet_number: u8
+      _const:        [0x0E]
+      layer_group:   u8
+      entries:
+        element:   KeyRemapEntry
+        max_count: 9
+      _tail:         [0xA5]
+    padding_to: 64
+
+  # Sends per-key colour data for up to 13 keys per packet.
+  # Each entry in the entries field is 4 bytes: [layout_index | 0x80, R, G, B].
+  # The entry region is terminated by a 0xFF sentinel at the byte immediately
+  # following the last valid entry. The transport layer must compute and write
+  # this sentinel position.
+  RgbKeyDataPacket:
+    direction: request
+    header: [0xAE, 0x01]
+    payload:
+      is_turbo:   u8
+      _reserved:  bytes[1]
+      mode_index: u8
+      _const:     [0x06]
+      brightness: u8
+      _sentinel:  [0xFF]
+      entries:
+        element:       RgbEntry
+        max_count:     13
+        terminated_by: 0xFF
+    padding_to: 64
+
+  SetLightingOff:
+    direction: request
+    header: [0xAE, 0x01, 0x00, 0x00, 0x05, 0x09]
+    padding_to: 64
+
+  RgbAcknowledge:
+    direction: response
+    header: [0xAE]
+    padding_to: 64
+
+  # All 0x55 commands share an envelope format. The sub-command byte in the
+  # header selects the operation. The checksum covers the variable-length
+  # inner envelope; the transport layer must compute it before sending.
+  #
+  # Read checksum  = (addr_lo + addr_hi + length) & 0xFF
+  # Write checksum = (length + addr_lo + addr_hi + is_last + sum(data)) & 0xFF
+  #
+  # All 0x55 responses share the response message below. For read operations
+  # the data field carries the returned payload. For write acknowledgements
+  # the data field is unused.
+
+  # Reads the global base block (sub-cmd 0x04, address 0, 32 bytes).
+  # The first byte of the returned data is the currently active profile index.
+  # This block is not profile-indexed - it reflects global keyboard state.
+  ReadBaseBlock:
+    direction: request
+    header: [0x55, 0x04, 0x00]
+    payload:
+      checksum: u8
+      length:   u8
+      address:  u16le
+    padding_to: 64
+
+  # Writes the active profile index into the global base block (sub-cmd 0x0E).
+  # Write 1 byte at address 0. The keyboard immediately switches to that profile.
+  # No profile-index offset - this is a global operation.
+  WriteActiveProfile:
+    direction: request
+    header: [0x55, 0x0E, 0x00]
+    payload:
+      checksum: u8
+      length:   u8
+      address:  u16le
+      is_last:       u8
+      profile_index: u8
+    padding_to: 64
+
+  ReadFuncBlock:
+    direction: request
+    header: [0x55, 0x05, 0x00]
+    payload:
+      checksum: u8
+      length:   u8
+      address:  u16le
+    padding_to: 64
+
+  WriteFuncBlockChunk:
+    direction: request
+    header: [0x55, 0x06, 0x00]
+    payload:
+      checksum: u8
+      length:   u8
+      address:  u16le
+      is_last:  u8
+      data:     bytes[56]
+    padding_to: 64
+
+  ReadKeyTrigger:
+    direction: request
+    header: [0x55, 0xA0, 0x00]
+    payload:
+      checksum: u8
+      length:   u8
+      address:  u16le
+    padding_to: 64
+
+  WriteKeyTriggerChunk:
+    direction: request
+    header: [0x55, 0xA1, 0x00]
+    payload:
+      checksum: u8
+      length:   u8
+      address:  u16le
+      is_last:  u8
+      data:     bytes[56]
+    padding_to: 64
+
+  # Reads macro slot data for one profile (sub-cmd 0x0C).
+  # 2048 bytes per profile at address 2048 × profileIndex.
+  # First 64 bytes = header: 32 × LE16 offset pointers into the 2048-byte block.
+  # A pointer of 0x0040 (64) or 0x0000 indicates an empty slot.
+  # Each step is 4 bytes (see MacroStep struct).
+  ReadMacroChunk:
+    direction: request
+    header: [0x55, 0x0C, 0x00]
+    payload:
+      checksum: u8
+      length:   u8
+      address:  u16le
+    padding_to: 64
+
+  # Writes macro slot data for one profile (sub-cmd 0x0D).
+  # Same address layout as ReadMacroChunk. Max 56 bytes of data per chunk.
+  WriteMacroChunk:
+    direction: request
+    header: [0x55, 0x0D, 0x00]
+    payload:
+      checksum: u8
+      length:   u8
+      address:  u16le
+      is_last:  u8
+      data:     bytes[56]
+    padding_to: 64
+
+  # Shared response for all 0x55 operations. The seven reserved bytes
+  # precede the data payload at a fixed offset; the transport layer
+  # skips them when extracting read data.
+  ExtendedGatewayResponse:
+    direction: response
+    header: [0xAA]
+    payload:
+      _reserved: bytes[7]
+      data:      bytes[56]
+    padding_to: 64

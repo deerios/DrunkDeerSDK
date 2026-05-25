@@ -1,0 +1,263 @@
+# Device discovery uses VID/PID matching. After connecting, the identity
+# response narrows to the specific model via the three identity bytes.
+#
+# Note: PID 0x2387 (A75 Ultra, A75 Master) is confirmed here from updater
+# config but is absent from the current DDSharp HidInterface known PID list.
+discovery:
+  interfaces:
+    - vid: 0x352d
+      pids: [0x2382, 0x2383, 0x2384, 0x2386, 0x2387, 0x2391]
+    - vid: 0x05ac
+      pids: [0x024f]
+    - vid: 0x04d9
+      pids: [0x2a08]
+    - vid: 0x1a85
+      pids: [0xfc4f]
+
+models:
+
+  # Standard-precision model. Acquires kun_precision at firmware >= 35 (ANSI beta).
+  # ISO variant (11,4,2) uses a different firmware binary with Kun threshold 25;
+  # the single slug uses threshold 35 (the ANSI value) so ANSI units at fw 25-34
+  # are not incorrectly placed in Kun mode. ISO users at fw 25-34 stay in standard
+  # (safe; they just don't get the 0.01 mm resolution until fw >= 35).
+  # Identity (11,1,1) is an alternate PID observed for the same ANSI hardware.
+  a75:
+    name: A75
+    capabilities: []
+    firmware_overrides:
+      min_depth_mm: 0.2
+      max_depth_mm: 3.3
+    kun_precision:
+      min_firmware: 35
+      max_depth_mm: 2.0
+    identities:
+      - bytes: [0x0b, 0x04, 0x01]
+        variant: ansi
+      - bytes: [0x0b, 0x01, 0x01]
+        variant: ansi_alt
+      - bytes: [0x0b, 0x04, 0x02]
+        variant: iso
+
+  # Standard-precision model by default. Acquires kun_precision at firmware >= 17 (beta).
+  a75_pro:
+    name: A75 Pro
+    capabilities: []
+    firmware_overrides:
+      min_depth_mm: 0.2
+      max_depth_mm: 3.3
+    kun_precision:
+      min_firmware: 17
+      max_depth_mm: 2.0
+    identities:
+      - bytes: [0x0b, 0x04, 0x03]
+        variant: ansi
+
+  # FD high-precision model. Not compatible with Kun switch.
+  # Uses 0xFD × 200 (u16le per key, 0.005 mm/unit) unconditionally.
+  # Has a dedicated logo LED zone (DRUNKDEER logo illumination - confirmed from JS setKeyboardLogoLight).
+  a75_ultra:
+    name: A75 Ultra
+    capabilities: [high_precision, logo_light, berserk_mode]
+    firmware_overrides:
+      min_depth_mm: 0.2
+      max_depth_mm: 3.3
+    identities:
+      - bytes: [0x0b, 0x04, 0x04]
+        variant: ansi
+
+  # FD high-precision model. Not compatible with Kun switch.
+  # Uses "Qian" switches: 4.0+0.2mm total travel, 0.01mm RT precision, 0.01–3.5mm RT range.
+  a75_master:
+    name: A75 Master
+    capabilities: [high_precision, berserk_mode]
+    firmware_overrides:
+      min_depth_mm: 0.2
+      max_depth_mm: 3.5
+    identities:
+      - bytes: [0x0b, 0x05, 0x04]
+        variant: ansi
+
+  # Standard-precision by default. Acquires kun_precision at firmware >= 13 (ANSI beta).
+  # G75 ANSI and JP have different firmware binaries and therefore different Kun thresholds
+  # (13 for ANSI, 6 for JP). They are split into separate slugs so each gets its correct
+  # threshold and no cross-contamination occurs between firmware tracks.
+  g75:
+    name: G75
+    capabilities: []
+    firmware_overrides:
+      min_depth_mm: 0.2
+      max_depth_mm: 3.3
+    kun_precision:
+      min_firmware: 13
+      max_depth_mm: 2.0
+    identities:
+      - bytes: [0x0b, 0x04, 0x05]
+        variant: ansi
+
+  # G75 Japanese layout. Same hardware as G75; separate firmware binary.
+  # Kun threshold differs from ANSI (fw >= 6 vs fw >= 13).
+  g75_jp:
+    name: G75 JP
+    capabilities: []
+    firmware_overrides:
+      min_depth_mm: 0.2
+      max_depth_mm: 3.3
+    kun_precision:
+      min_firmware: 6
+      max_depth_mm: 2.0
+    identities:
+      - bytes: [0x0b, 0x04, 0x07]
+        variant: jp
+
+  # Physical keys start at firmware slot 21 (ESC); slots 0-20 are reserved.
+  # Standard-precision by default. Acquires kun_precision at firmware >= 19 (beta).
+  # Identity (0x0F, 0x01, 0x01) is an alternate PID observed for the same hardware.
+  g65:
+    name: G65
+    capabilities: []
+    firmware_overrides:
+      layout_slot_offset: 21
+      rgb_packet_count:   6
+      min_depth_mm: 0.2
+      max_depth_mm: 3.3
+    kun_precision:
+      min_firmware: 19
+      max_depth_mm: 2.0
+    identities:
+      - bytes: [0x0b, 0x02, 0x01]
+        variant: ansi
+      - bytes: [0x0f, 0x01, 0x01]
+        variant: ansi_alt
+      - bytes: [0x0b, 0x02, 0x02]
+        variant: iso
+
+  # G65 Lite: standard precision only (no Kun capability seen in JS dispatch).
+  g65_lite:
+    name: G65 Lite
+    capabilities: []
+    firmware_overrides:
+      layout_slot_offset: 21
+      rgb_packet_count:   6
+      min_depth_mm: 0.2
+      max_depth_mm: 3.3
+    identities:
+      - bytes: [0x0b, 0x02, 0x05]
+        variant: ansi
+
+  # G65 m1/m2/m3: always kun_precision, no firmware version check.
+  # Byte[1] values: m1=0x02, m2=0x10, m3=0x12 (unusual vs standard 0x0B).
+  g65_m1:
+    name: G65 m1
+    capabilities: [kun_precision, berserk_mode]
+    firmware_overrides:
+      layout_slot_offset: 21
+      rgb_packet_count:   6
+      min_depth_mm: 0.2
+      max_depth_mm: 2.0
+    identities:
+      - bytes: [0x0b, 0x02, 0x03]
+        variant: ansi
+
+  g65_m2:
+    name: G65 m2
+    capabilities: [kun_precision, berserk_mode]
+    firmware_overrides:
+      layout_slot_offset: 21
+      rgb_packet_count:   6
+      min_depth_mm: 0.2
+      max_depth_mm: 2.0
+    identities:
+      - bytes: [0x0b, 0x10, 0x01]
+        variant: ansi
+
+  g65_m3:
+    name: G65 m3
+    capabilities: [kun_precision, berserk_mode]
+    firmware_overrides:
+      layout_slot_offset: 21
+      rgb_packet_count:   6
+      min_depth_mm: 0.2
+      max_depth_mm: 2.0
+    identities:
+      - bytes: [0x0b, 0x12, 0x01]
+        variant: ansi
+
+  # Standard-precision by default. Acquires kun_precision at firmware >= 21 (beta).
+  g60:
+    name: G60
+    capabilities: []
+    firmware_overrides:
+      rgb_packet_count: 6
+      min_depth_mm: 0.2
+      max_depth_mm: 3.3
+    kun_precision:
+      min_firmware: 21
+      max_depth_mm: 2.0
+    identities:
+      - bytes: [0x0b, 0x03, 0x01]
+        variant: ansi
+      - bytes: [0x0b, 0x03, 0x02]
+        variant: iso
+
+  # G60 variant - keyboard_type 600 in JS dispatch; always kun_precision.
+  # Physical product name unknown.
+  g60_v600:
+    name: G60 v600
+    capabilities: [kun_precision, berserk_mode]
+    firmware_overrides:
+      rgb_packet_count: 6
+      min_depth_mm: 0.2
+      max_depth_mm: 2.0
+    identities:
+      - bytes: [0x0b, 0x03, 0x03]
+        variant: ansi
+
+  # Unknown models - keyboard_types 601 and 602 in JS dispatch; always kun_precision.
+  unk_601:
+    name: Unknown-601
+    capabilities: [kun_precision, berserk_mode]
+    firmware_overrides:
+      min_depth_mm: 0.2
+      max_depth_mm: 2.0
+    identities:
+      - bytes: [0x0b, 0x13, 0x01]
+        variant: ansi
+
+  unk_602:
+    name: Unknown-602
+    capabilities: [kun_precision, berserk_mode]
+    firmware_overrides:
+      min_depth_mm: 0.2
+      max_depth_mm: 2.0
+    identities:
+      - bytes: [0x0b, 0x15, 0x01]
+        variant: ansi
+
+  # X60 Future - JS device type 102, firmware X60Future_CSE23429E1.
+  # Has a dedicated side LED strip zone (confirmed from JS setKeyboardSideLight).
+  # Not compatible with Kun switch.
+  # TODO: the identity bytes below were captured before X60 HE/Future were distinguished.
+  # One of the two variants uses [0x0b, 0x06, 0x05]; the other's bytes are still unknown.
+  # Once an X60 HE can be probed, split into separate x60_he / x60_future slugs.
+  x60_future:
+    name: X60 Future
+    capabilities: [high_precision, side_light, berserk_mode]
+    firmware_overrides:
+      min_depth_mm: 0.2
+      max_depth_mm: 3.3
+    identities:
+      - bytes: [0x0b, 0x06, 0x05]
+        variant: ansi
+
+  # X60 HE - JS device type 105, firmware X60HE_CS27B6C4A0.
+  # No side LED strip. Identity bytes unknown until hardware can be probed.
+  # x60_he:
+  #   name: X60 HE
+  #   capabilities: [high_precision]
+  #   firmware_overrides:
+  #     min_depth_mm: 0.2
+  #     max_depth_mm: 3.3
+  #   identities:
+  #     - bytes: [0x0b, 0x06, ???]   # TODO: capture from real device
+  #       variant: ansi

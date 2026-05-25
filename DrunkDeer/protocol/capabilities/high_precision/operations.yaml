@@ -1,0 +1,77 @@
+operations:
+
+  # Overrides the base SetActuationPoint for high precision models.
+  SetActuationPoint:
+    description: >
+      Write the actuation point depth for all keys using high precision.
+      One unit of key_values equals 0.005 mm.
+      Each request must be acknowledged before the next is sent.
+      Sections 0-3 each carry 30 key values as u16le pairs.
+      Section 4 carries 6 values; the remaining bytes in that message are unused.
+    request:       WriteActuationPointHighPrecision
+    response:      WriteKeyPointAcknowledgeHighPrecision
+    request_count: 5
+
+  ReadActuationPoint:
+    description: >
+      Read the actuation point profile currently stored in the keyboard.
+      The keyboard replies with five response messages, one per section.
+      Each key value is a u16le where one unit equals 0.005 mm.
+      The section index is embedded in the response at byte position 2;
+      out-of-order delivery is handled by the transport layer.
+    request:        ReadActuationPointHighPrecision
+    response:       ActuationPointResponseHighPrecision
+    response_count: 5
+
+  # Overrides the base SetDownstrokePoint for high precision models.
+  SetDownstrokePoint:
+    description: >
+      Write the downstroke point depth for all keys using high precision.
+      One unit of key_values equals 0.005 mm.
+      Each request must be acknowledged before the next is sent.
+      Sections 0-3 each carry 30 key values as u16le pairs.
+      Section 4 carries 6 values; the remaining bytes in that message are unused.
+    request:       WriteDownstrokePointHighPrecision
+    response:      WriteKeyPointAcknowledgeHighPrecision
+    request_count: 5
+
+  ReadDownstrokePoint:
+    description: >
+      Read the downstroke point profile currently stored in the keyboard.
+      The keyboard replies with five response messages, one per section.
+      Each key value is a u16le where one unit equals 0.005 mm.
+    request:        ReadDownstrokePointHighPrecision
+    response:       DownstrokePointResponseHighPrecision
+    response_count: 5
+
+  # Overrides the base SetUpstrokePoint for high precision models.
+  SetUpstrokePoint:
+    description: >
+      Write the upstroke point depth for all keys using high precision.
+      One unit of key_values equals 0.005 mm.
+      Each request must be acknowledged before the next is sent.
+      Sections 0-3 each carry 30 key values as u16le pairs.
+      Section 4 carries 6 values; the remaining bytes in that message are unused.
+    request:       WriteUpstrokePointHighPrecision
+    response:      WriteKeyPointAcknowledgeHighPrecision
+    request_count: 5
+
+  ReadUpstrokePoint:
+    description: >
+      Read the upstroke point profile currently stored in the keyboard.
+      The keyboard replies with five response messages, one per section.
+      Each key value is a u16le where one unit equals 0.005 mm.
+    request:        ReadUpstrokePointHighPrecision
+    response:       UpstrokePointResponseHighPrecision
+    response_count: 5
+
+  # Overrides the base SetKeystrokeTracking for high precision models.
+  SetKeystrokeTracking:
+    description: >
+      Enable or disable the continuous key travel depth stream on high-precision
+      models. When enabled the keyboard emits KeyTravelHighPrecision (0xFD 0x06)
+      packets instead of standard TravelResponse (0xB7) packets.
+      Each key value is a u16le; depth in mm = raw / 200.0.
+      Values below 40 units (0.2 mm) are at rest.
+    request:  SetKeystrokeTracking
+    response: KeyTravelHighPrecision

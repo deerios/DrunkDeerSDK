@@ -1,0 +1,107 @@
+structs:
+
+  # One key colour entry within an RgbKeyDataPacket.
+  # index_flag is the layout index ORed with 0x80.
+  RgbEntry:
+    index_flag: u8
+    r:          u8
+    g:          u8
+    b:          u8
+
+  # One entry within a KeyRemapPacket. Two variants share this 6-byte layout.
+  #
+  # HID key (cmd = 0xFC):
+  #   [slot, 0xFC, 0x00, hid_code, 0x00, 0x00]
+  #
+  # LW/RDT pair member (cmd = 0xF8):
+  #   [slot, 0xF8, rtp_number, group_number, pos_in_group, rdt_flag]
+  KeyRemapEntry:
+    slot: u8
+    cmd:  u8
+    data: bytes[4]
+
+  # One firmware-level Last Win pair entry within a CreateLwPairs packet.
+  # Both main_slot and trigger_slot are firmware layout indices (0-125).
+  # A single user-visible pair expands to two entries: (A->B) and (B->A).
+  LastWinPairEntry:
+    main_slot:    u8
+    trigger_slot: u8
+    _reserved:    bytes[2]
+
+  # One 4-byte step within a macro slot's step data region.
+  # The delay field holds the time in milliseconds to wait after this step fires,
+  # before the next step is executed. The last step in a slot has delay = 0.
+  #
+  # flags byte layout:
+  #   bits 0-5: key_type  (1 = modifier bitmask, 2 = regular HID key, 3 = mouse button)
+  #   bit  6:   is_down   (1 = key/button down, 0 = key/button up)
+  #   bit  7:   is_last   (1 = final step in this slot)
+  #
+  # code byte:
+  #   key_type 1 (modifier): bitmask, bit N set = modifier with HID usage 224+N
+  #   key_type 2 (HID key):  HID keyboard usage code (0x04-0xE7, excluding 0xE0-0xE7)
+  #   key_type 3 (mouse):    mouse button index (0 = left, 1 = right, 2 = middle, …)
+  MacroStep:
+    delay: u16le
+    flags: u8
+    code:  u8
+
+  # One 8-byte per-key rapid-trigger config entry within the KeyTrigger region.
+  #
+  # Bit-level layout (zero-indexed within the 8-byte entry):
+  #   [0]      bits 0-3: switch_type   bits 4-7: always 0xA on write (firmware convention)
+  #   [1]      bits 0-3: key_mode      bits 4-7: priority
+  #   [2..3]   LE9: actuation   (stored = value − 1; bit 0 of [3] is the 9th bit)
+  #   [3]      bits 1-2: release_precision   bits 3-4: press_precision
+  #   [4..5]   LE9: rt_press    (stored = value − 1; bit 0 of [5] is 9th bit)
+  #   [5]      bits 1-7: press_deadzone
+  #   [6..7]   LE9: rt_release  (stored = value − 1; bit 0 of [7] is 9th bit)
+  #   [7]      bits 1-7: release_deadzone
+  KeyTriggerEntry:
+    byte_size: 8
+    bit_fields:
+      switch_type:
+        byte: 0
+        bit_lo: 0
+        bit_hi: 3
+      _switch_hi:             # always 0xA on encode; ignored on decode
+        byte: 0
+        bit_lo: 4
+        bit_hi: 7
+        const: 0xA
+      key_mode:
+        byte: 1
+        bit_lo: 0
+        bit_hi: 3
+      priority:
+        byte: 1
+        bit_lo: 4
+        bit_hi: 7
+      actuation:              # LE9 spanning bytes 2-3; stored = value − 1
+        byte_lo: 2
+        byte_hi: 3
+        bias: 1
+      release_precision:
+        byte: 3
+        bit_lo: 1
+        bit_hi: 2
+      press_precision:
+        byte: 3
+        bit_lo: 3
+        bit_hi: 4
+      rt_press:               # LE9 spanning bytes 4-5; stored = value − 1
+        byte_lo: 4
+        byte_hi: 5
+        bias: 1
+      press_deadzone:
+        byte: 5
+        bit_lo: 1
+        bit_hi: 7
+      rt_release:             # LE9 spanning bytes 6-7; stored = value − 1
+        byte_lo: 6
+        byte_hi: 7
+        bias: 1
+      release_deadzone:
+        byte: 7
+        bit_lo: 1
+        bit_hi: 7

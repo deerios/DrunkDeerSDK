@@ -1,0 +1,136 @@
+profile_blocks:
+
+  # The 64-byte function-config block stored per keyboard profile.
+  # Internal - consumers use the typed methods on KeyboardSession.
+  # All fields are read-modify-write over a byte[64] backing array.
+  KeyboardFuncBlock:
+    byte_size: 64
+    fields:
+
+      # byte [1] ─────────────────────────────────────────────────────────────
+      mac_mode:
+        byte: 1
+        bit_lo: 0
+        bit_hi: 3
+
+      # byte [4] ─────────────────────────────────────────────────────────────
+      report_rate:
+        byte: 4
+        bit_lo: 0
+        bit_hi: 3
+        type: enum:ReportRate
+
+      tick_rate:
+        byte: 4
+        bit_lo: 4
+        bit_hi: 7
+
+      # byte [6] ─────────────────────────────────────────────────────────────
+      win_lock:
+        byte: 6
+        bit: 0
+        type: bool
+
+      alt_tab_lock:
+        byte: 6
+        bit: 1
+        type: bool
+
+      alt_f4_lock:
+        byte: 6
+        bit: 2
+        type: bool
+
+      # byte [7] ─────────────────────────────────────────────────────────────
+      berserk_mode:
+        byte: 7
+        bit: 0
+        type: bool
+
+      stability_mode:
+        byte: 7
+        bit_lo: 1
+        bit_hi: 2
+
+      debounce:
+        byte: 7
+        bit_lo: 5
+        bit_hi: 7
+
+      # bytes [8-16]: main key preset lighting ───────────────────────────────
+      light_effect:
+        byte: 8
+
+      light_brightness:
+        byte: 9
+
+      light_speed:
+        byte: 10
+        # Range 0-4; INVERTED: raw 0 = fastest, raw 4 = slowest. JS converts: user = 4 − raw.
+
+      light_direction:
+        byte: 11
+
+      light_single_color:
+        byte: 12
+        type: bool
+        inverted: true  # firmware: 0 = single-colour on, non-zero = multi-colour preset
+
+      light_color_r:
+        byte: 14
+
+      light_color_g:
+        byte: 15
+
+      light_color_b:
+        byte: 16
+
+      # bytes [24-31]: logo lighting ─────────────────────────────────────────
+      logo_light_effect:
+        byte: 24
+
+      logo_light_brightness:
+        byte: 25
+
+      logo_light_speed:
+        byte: 26
+        # Range 0-4; INVERTED: raw 0 = fastest, raw 4 = slowest (same as light_speed).
+
+      logo_light_single_color:
+        byte: 27
+        type: bool
+        inverted: true  # firmware: 0 = single-colour on, non-zero = multi-colour preset
+
+      logo_light_color_r:
+        byte: 29
+
+      logo_light_color_g:
+        byte: 30
+
+      logo_light_color_b:
+        byte: 31
+
+      # bytes [32-39]: side lighting ─────────────────────────────────────────
+      side_light_effect:
+        byte: 32
+
+      side_light_brightness:
+        byte: 33
+
+      side_light_speed:
+        byte: 34
+        # Range 0-4; INVERTED: raw 0 = fastest, raw 4 = slowest (same as light_speed).
+
+      side_light_single_color:
+        byte: 35
+        type: bool
+        inverted: true  # firmware: 0 = single-colour on, non-zero = multi-colour preset
+
+      side_light_color_r:
+        byte: 37
+
+      side_light_color_g:
+        byte: 38
+
+      side_light_color_b:
+        byte: 39

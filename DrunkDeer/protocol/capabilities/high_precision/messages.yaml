@@ -1,0 +1,83 @@
+messages:
+
+  WriteActuationPointHighPrecision:
+    direction: request
+    header: [0xFD, 0x01]
+    payload:
+      section:    u8
+      key_values: bytes[60]
+    padding_to: 64
+
+  ReadActuationPointHighPrecision:
+    direction: request
+    header: [0xFD, 0x07, 0x01]
+    padding_to: 64
+
+  ActuationPointResponseHighPrecision:
+    direction: response
+    header: [0xFD, 0x08]
+    payload:
+      section:    u8
+      key_values: bytes[60]
+    padding_to: 64
+
+  WriteDownstrokePointHighPrecision:
+    direction: request
+    header: [0xFD, 0x04]
+    payload:
+      section:    u8
+      key_values: bytes[60]
+    padding_to: 64
+
+  ReadDownstrokePointHighPrecision:
+    direction: request
+    header: [0xFD, 0x07, 0x03]
+    padding_to: 64
+
+  DownstrokePointResponseHighPrecision:
+    direction: response
+    header: [0xFD, 0x0A]
+    payload:
+      section:    u8
+      key_values: bytes[60]
+    padding_to: 64
+
+  WriteUpstrokePointHighPrecision:
+    direction: request
+    header: [0xFD, 0x05]
+    payload:
+      section:    u8
+      key_values: bytes[60]
+    padding_to: 64
+
+  ReadUpstrokePointHighPrecision:
+    direction: request
+    header: [0xFD, 0x07, 0x04]
+    padding_to: 64
+
+  UpstrokePointResponseHighPrecision:
+    direction: response
+    header: [0xFD, 0x0B]
+    payload:
+      section:    u8
+      key_values: bytes[60]
+    padding_to: 64
+
+  # Acknowledges all high-precision key-point writes (actuation, downstroke,
+  # upstroke). The keyboard echoes the command byte 0xFD.
+  WriteKeyPointAcknowledgeHighPrecision:
+    direction: response
+    header: [0xFD]
+    padding_to: 64
+
+  # Emitted by the keyboard when SetKeystrokeTracking is enabled on high-precision
+  # models. Each key value is a u16le; depth in mm = raw / 200.0.
+  # Values below 40 units (0.2 mm) are treated as at rest (dead zone).
+  # The 30 u16le values cover 30 keys per packet; the section byte selects
+  # which group of 30 keys is reported.
+  KeyTravelHighPrecision:
+    direction: response
+    header: [0xFD, 0x06]
+    payload:
+      key_values: bytes[60]
+    padding_to: 64

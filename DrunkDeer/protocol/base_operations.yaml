@@ -1,0 +1,145 @@
+operations:
+
+  Connect:
+    description: >
+      Send an identity request and receive the keyboard's model bytes and
+      firmware information. The three model bytes are used to determine the
+      keyboard model, layout table, and precision mode.
+    request:  IdentityRequest
+    response: IdentityResponse
+
+  ReadTravel:
+    description: >
+      Request a snapshot of current key travel depths for all keys.
+      The keyboard replies with three TravelResponse messages in sequence.
+      Packet index 0 carries travel for layout indices 0-58,
+      packet index 1 carries indices 59-117,
+      packet index 2 carries indices 118-126.
+      Each travel value is a signed integer where one unit equals 0.1 mm.
+    request:        TravelRequest
+    response:       TravelResponse
+    response_count: 3
+
+  SetActuationPoint:
+    description: >
+      Write the actuation point depth for all keys using standard precision.
+      One unit of key_values equals 0.1 mm.
+      Each request must be acknowledged before the next is sent.
+      Packet index 0 carries values for layout indices 0-58,
+      index 1 carries 59-117, index 2 carries 118-125.
+    request:       WriteActuationPointStandard
+    response:      WriteKeyPointAcknowledgeStandard
+    request_count: 3
+
+  SetDownstrokePoint:
+    description: >
+      Write the downstroke point depth for all keys using standard precision.
+      One unit of key_values equals 0.1 mm.
+      Each request must be acknowledged before the next is sent.
+      Packet index 0 carries values for layout indices 0-58,
+      index 1 carries 59-117, index 2 carries 118-125.
+    request:       WriteDownstrokePointStandard
+    response:      WriteKeyPointAcknowledgeStandard
+    request_count: 3
+
+  SetUpstrokePoint:
+    description: >
+      Write the upstroke point depth for all keys using standard precision.
+      One unit of key_values equals 0.1 mm.
+      Each request must be acknowledged before the next is sent.
+      Packet index 0 carries values for layout indices 0-58,
+      index 1 carries 59-117, index 2 carries 118-125.
+    request:       WriteUpstrokePointStandard
+    response:      WriteKeyPointAcknowledgeStandard
+    request_count: 3
+
+  ReadFuncBlock:
+    description: >
+      Read the 64-byte function-config block for a profile from the keyboard.
+      The block is fetched in 56-byte chunks. Each chunk request carries the
+      address and length; the checksum covers address and length bytes.
+      The response data begins at a fixed offset after a 7-byte reserved header.
+      Address formula: 64 × profile_index + chunk_offset.
+    request:       ReadFuncBlock
+    response:      ExtendedGatewayResponse
+    request_count: 2
+
+  WriteFuncBlock:
+    description: >
+      Write a 64-byte function-config block for a profile to the keyboard.
+      The block is sent in 56-byte chunks. The is_last field must be set to 1
+      on the final chunk. The checksum covers length, address, is_last, and data.
+      Address formula: 64 × profile_index + chunk_offset.
+      Known func block layout (bytes are zero-indexed within the 64-byte block):
+        [1]  mac_mode (low nibble)
+        [4]  report_rate (bits 0-3), tick_rate (bits 4-7)
+        [6]  lock_win (bit 0), lock_alt_tab (bit 1), lock_alt_f4 (bit 2)
+        [7]  berserk_mode (bit 0), stability_mode (bits 1-2), debug_mode (bit 3), debounce (bits 5-7)
+        [8]  light_effect
+        [9]  light_brightness
+        [10] light_speed
+    request:       WriteFuncBlockChunk
+    response:      ExtendedGatewayResponse
+    request_count: 2
+
+  ReadKeyTrigger:
+    description: >
+      Read the per-key trigger configuration for a profile from the keyboard.
+      128 keys × 8 bytes = 1024 bytes per profile, fetched in 56-byte chunks.
+      Each 8-byte entry carries switch_type, key_mode, actuation, RT press/release
+      thresholds, and press/release deadzones.
+      Address formula: 1024 × profile_index + 8 × key_index.
+      Entry layout (8 bytes per key, zero-indexed):
+        [0]      switch_type (bits 0-3)
+        [1]      key_mode (bits 0-3), priority (bits 4-7)
+        [2..3]   key_actuation as LE9 + 1 (9-bit little-endian, bit 0 of [3] is MSB)
+        [3]      press_precision (bits 3-4), release_precision (bits 1-2)
+        [4..5]   rt_press as LE9 + 1
+        [5]      press_deadzone (bits 1-7)
+        [6..7]   rt_release as LE9 + 1
+        [7]      release_deadzone (bits 1-7)
+    request:        ReadKeyTrigger
+    response:       ExtendedGatewayResponse
+    request_count:  19
+
+  WriteKeyTrigger:
+    description: >
+      Write the per-key trigger configuration for a profile to the keyboard.
+      Same layout and addressing as ReadKeyTrigger.
+      The is_last field must be set to 1 on the final chunk.
+    request:        WriteKeyTriggerChunk
+    response:       ExtendedGatewayResponse
+    request_count:  19
+
+  WriteRgb:
+    description: >
+      Send custom per-key RGB colour data to the keyboard.
+      The keyboard must acknowledge each packet before the next is sent;
+      sending without waiting produces a brief all-off flash.
+      Each packet carries up to 13 key entries. An entry is 4 bytes:
+      [layout_index | 0x80, R, G, B]. The entries field is followed by
+      a 0xFF sentinel byte at the position immediately after the last entry.
+      Packet count: 7 for most models, 6 for G60 and G65.
+      mode_index: 0x13 for custom lighting.
+      _constant field is always 0x06.
+      _sentinel field is always 0xFF.
+    request:  RgbKeyDataPacket
+    response: RgbAcknowledge
+
+  SetLightingOff:
+    description: >
+      Turn off all key lighting.
+    request:  SetLightingOff
+    response: RgbAcknowledge
+
+  SetKeystrokeTracking:
+    description: >
+      Enable or disable the continuous key travel depth stream.
+      When enabled (enabled=1) the keyboard emits TravelResponse (0xB7) packets
+      at the polling rate. When disabled (enabled=0) the stream stops.
+      DDSharp sends enabled=1 once and reads three responses as a snapshot;
+      other implementations hold the stream open for continuous polling.
+      High-precision models emit KeyTravelHighPrecision (0xFD 0x06) instead;
+      see the high_precision capability for the override.
+    request:  SetKeystrokeTracking
+    response: TravelResponse

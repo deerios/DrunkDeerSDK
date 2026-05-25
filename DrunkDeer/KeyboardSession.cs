@@ -1,0 +1,2576 @@
+using Serilog;
+using System.Buffers.Binary;
+using System.Diagnostics;
+
+namespace DrunkDeer.Protocol;
+
+/// <summary>USB polling rate reported to the host.</summary>
+public enum ReportRate : byte
+{
+	/// <summary>125 Hz - 8 ms latency.</summary>
+	Hz125 = 0,
+	/// <summary>250 Hz - 4 ms latency.</summary>
+	Hz250 = 1,
+	/// <summary>500 Hz - 2 ms latency.</summary>
+	Hz500 = 2,
+	/// <summary>1000 Hz - 1 ms latency.</summary>
+	Hz1000 = 3,
+}
+
+/// <summary>Operating-system compatibility mode for modifier key behaviour.</summary>
+public enum KeyboardMode : byte
+{
+	/// <summary>Standard Windows / Linux mode.</summary>
+	Windows = 0,
+	/// <summary>
+	/// Mac mode: Cmd and Option keys are remapped to match macOS conventions.
+	/// </summary>
+	Mac = 1,
+}
+
+/// <summary>
+/// Key-point encoding precision determined at connect time from the model's capabilities
+/// and firmware version.
+/// </summary>
+public enum PrecisionMode : byte
+{
+	/// <summary>B6 × 10 (0.1 mm/unit). Standard RAESHA V1 switch.</summary>
+	Standard = 0,
+	/// <summary>B6 × 100 (0.01 mm/unit). Kun switch (firmware-gated or always-Kun).</summary>
+	Kun = 1,
+	/// <summary>FD × 200 (0.005 mm/unit, u16le). A75 Ultra, A75 Master, X60 Future.</summary>
+	FD = 2,
+}
+
+/// <summary>
+/// Controls which Last Win and Rapid Trigger features are simultaneously active.
+/// Pass to <see cref="KeyboardSession.SetLastWinRapidTriggerMode"/> or as the
+/// <c>lastWinRapidTriggerMode</c> argument of <see cref="KeyboardSession.SetCommonConfig"/>.
+/// </summary>
+public enum LastWinRapidTriggerMode : byte
+{
+	/// <summary>Both Last Win and Rapid Trigger are disabled.</summary>
+	Disabled = 0,
+	/// <summary>Only Last Win is active; Rapid Trigger is disabled.</summary>
+	LastWinOnly = 1,
+	/// <summary>Only Rapid Trigger is active; Last Win is disabled.</summary>
+	RapidTriggerOnly = 2,
+	/// <summary>Both Last Win and Rapid Trigger are active.</summary>
+	Both = 3,
+}
+
+/// <summary>
+/// High-level wrapper around <see cref="KeyboardConnection"/> that runs a background
+/// poll loop and raises typed events for key travel changes, presses, and releases.
+/// Also exposes configuration methods for actuation points, lighting, and global options.
+/// </summary>
+public sealed class KeyboardSession : IDisposable
+{
+	private static readonly ILogger _log = Log.ForContext<KeyboardSession>();
+
+	// Firmware always addresses 127 key slots (indices 0-126) across three B7 packets.
+	private const int KeyCount = 127;
+
+	// Packet 0 = keys 0-58, Packet 1 = keys 59-117, Packet 2 = keys 118-126.
+	private static readonly int[] PacketBase = [0, 59, 118];
+	private static readonly int[] PacketCount = [59, 59, 9];
+
+	// High-precision: 5 sections, 30 keys each (last section has 6).
+	private const int HpKeyCount = 126;
+	private static readonly int[] HpSectionBase = [0, 30, 60, 90, 120];
+	private static readonly int[] HpSectionSizes = [30, 30, 30, 30, 6];
+
+	private readonly IKeyboardConnection _connection;
+	private readonly PrecisionMode _precisionMode;
+	private readonly short[] _heights = new short[KeyCount];
+	private readonly bool[] _pressed = new bool[KeyCount];
+
+	private Task? _pollTask;
+	private CancellationTokenSource? _pollCts;
+	private bool _inFastMode;
+	private bool _disposed;
+
+	// Per-model layout and key-mapping data (initialised in constructor from KeyLayout)
+	private readonly int[] _rgbIndices;
+	private readonly IReadOnlyDictionary<DDKey, int> _keyIndexMap;
+
+	// Stateful key-point profiles - used by DDKey depth-setter overloads so a
+	// per-key change can be sent as a complete packet with all other keys unchanged.
+	private readonly float[] _actuationProfile;
+	private readonly float[] _downstrokeProfile;
+	private readonly float[] _upstrokeProfile;
+
+	// Stateful RGB profile - used by SetKeyColor to preserve other keys' colours.
+	private readonly (byte R, byte G, byte B)[] _rgbProfile = new (byte, byte, byte)[127];
+
+	// Stateful global feature flags - mirrored from the keyboard and kept in sync by
+	// Enable/Disable helpers so SendCommonConfig can always rebuild a complete packet.
+	private bool _turboEnabled;
+	private bool _rapidTriggerEnabled;
+	private LastWinRapidTriggerMode _lastWinRtMode;
+	private bool _rapidTriggerAutoMatch;
+
+	/// <summary>Model metadata resolved during the identity handshake.</summary>
+	public ModelInfo Model { get; }
+	/// <summary>Variant string (e.g. "ansi", "iso") resolved during the identity handshake.</summary>
+	public string Variant { get; }
+	/// <summary>Firmware version byte returned by the keyboard.</summary>
+	public byte FirmwareVersion { get; }
+
+	/// <summary>
+	/// Key travel depth in mm that fires <see cref="KeyDown"/>. Default: 1.0 mm.
+	/// </summary>
+	public float PressThresholdMm { get; set; } = 1.0f;
+
+	/// <summary>
+	/// Key travel depth in mm below which <see cref="KeyUp"/> fires. Default: 0.5 mm.
+	/// </summary>
+	public float ReleaseThresholdMm { get; set; } = 0.5f;
+
+	/// <summary>Sets <see cref="PressThresholdMm"/> and <see cref="ReleaseThresholdMm"/> in one call.</summary>
+	public void SetThresholds(float pressThresholdMm, float releaseThresholdMm)
+	{
+		PressThresholdMm   = pressThresholdMm;
+		ReleaseThresholdMm = releaseThresholdMm;
+	}
+
+	/// <summary>
+	/// Total number of addressable key slots for the connected model.
+	/// FD-precision models: 126. All other models: 127.
+	/// </summary>
+	public int TotalKeyCount => _precisionMode == PrecisionMode.FD ? HpKeyCount : KeyCount;
+
+	/// <summary>
+	/// Number of physically illuminated keys for the connected model.
+	/// Equal to the number of entries in the model's RGB index array.
+	/// Use this as the upper bound when building per-key colour arrays.
+	/// </summary>
+	public int LightingKeyCount => _rgbIndices.Length;
+
+	/// <summary>
+	/// <see langword="true"/> while the background poll loop is running.
+	/// Configuration methods throw when this is <see langword="true"/>.
+	/// </summary>
+	public bool IsPolling => _pollTask is { IsCompleted: false };
+
+	/// <summary>Active precision mode determined at connect time from capabilities and firmware version.</summary>
+	public PrecisionMode PrecisionMode => _precisionMode;
+
+	/// <summary>
+	/// <see langword="true"/> if the connected keyboard uses FD high-precision (0.005 mm) depth
+	/// encoding (A75 Ultra, A75 Master, X60).
+	/// </summary>
+	public bool IsHighPrecision => _precisionMode == PrecisionMode.FD;
+
+	/// <summary><see langword="true"/> if the connected keyboard has a dedicated logo LED zone.</summary>
+	public bool HasLogoLight => (Model.Capabilities & Capabilities.LogoLight) != 0;
+
+	/// <summary><see langword="true"/> if the connected keyboard has a dedicated side LED zone.</summary>
+	public bool HasSideLight => (Model.Capabilities & Capabilities.SideLight) != 0;
+
+	/// <summary>
+	/// <see langword="true"/> if the connected keyboard supports Berserk (Turbo) mode.
+	/// HighPrecision models (A75 Ultra, A75 Master, X60 Future) and always-KunPrecision
+	/// models (G65 m1/m2/m3, G60 v600, Unk601/602) support this feature.
+	/// Standard-precision models with firmware-gated Kun do not expose Berserk mode
+	/// because old firmware does not respond to the FuncBlock gateway (0x55/0x05).
+	/// </summary>
+	public bool HasBerserkMode => (Model.Capabilities & Capabilities.BerserkMode) != 0;
+
+	/// <summary>
+	/// <see langword="true"/> when the FuncBlock gateway (0x55/0x05 read, 0x06 write) is
+	/// supported by the connected keyboard. Requires <see cref="PrecisionMode"/> to be
+	/// <see cref="PrecisionMode.Kun"/> or <see cref="PrecisionMode.FD"/>. Standard-precision
+	/// models running below their Kun firmware threshold do not respond to these sub-commands.
+	/// </summary>
+	public bool HasFuncBlock => _precisionMode != PrecisionMode.Standard;
+
+	/// <summary>
+	/// Raised when the background poll loop detects that the keyboard has been disconnected.
+	/// The session is no longer usable after this event fires; dispose it and reconnect.
+	/// </summary>
+	public event EventHandler? Disconnected;
+
+	/// <summary>
+	/// Effective minimum actuation/downstroke/upstroke depth in mm for this connection.
+	/// Accounts for the active precision mode (standard vs Kun vs FD).
+	/// </summary>
+	public float MinDepthMm { get; }
+
+	/// <summary>
+	/// Effective maximum actuation/downstroke/upstroke depth in mm for this connection.
+	/// Accounts for the active precision mode (standard vs Kun vs FD).
+	/// </summary>
+	public float MaxDepthMm { get; }
+
+	/// <summary>Whether Rapid Trigger is currently enabled on the keyboard.</summary>
+	public bool RapidTriggerEnabled => _rapidTriggerEnabled;
+
+	/// <summary>Whether Turbo mode is currently enabled on the keyboard.</summary>
+	public bool TurboEnabled => _turboEnabled;
+
+	// mm-to-raw scale for the B7/FD travel stream: Standard=10, Kun=100, FD=200.
+	private float HeightScale => _precisionMode switch
+	{
+		PrecisionMode.FD => 200f,
+		PrecisionMode.Kun => 100f,
+		_ => 10f,
+	};
+
+	/// <summary>
+	/// Returns the last-polled travel depth for <paramref name="keyIndex"/> in millimetres.
+	/// Resolution: 0.1 mm (Standard), 0.01 mm (Kun), 0.005 mm (FD).
+	/// Returns 0 when the key is at rest or has not yet been polled.
+	/// </summary>
+	public float GetKeyHeightMm(int keyIndex)
+	{
+		if ((uint)keyIndex >= (uint)TotalKeyCount)
+			throw new ArgumentOutOfRangeException(nameof(keyIndex),
+				$"Key index {keyIndex} is out of range [0, {TotalKeyCount - 1}].");
+		return _heights[keyIndex] / HeightScale;
+	}
+
+	/// <summary>
+	/// Returns the last-polled travel depth for <paramref name="key"/> in millimetres.
+	/// Throws if <paramref name="key"/> is not present on this keyboard model.
+	/// </summary>
+	public float GetKeyHeightMm(DDKey key) => GetKeyHeightMm(GetKeyIndex(key));
+
+	/// <summary>
+	/// Returns a snapshot of all key travel depths in millimetres, indexed by layout key index.
+	/// Length equals <see cref="TotalKeyCount"/>. Keys at rest return 0.
+	/// </summary>
+	public float[] GetAllKeyHeightsMm()
+	{
+		float scale = HeightScale;
+		var mm = new float[TotalKeyCount];
+		for (int i = 0; i < TotalKeyCount; i++)
+			mm[i] = _heights[i] / scale;
+		return mm;
+	}
+
+	/// <summary>
+	/// Returns <see langword="true"/> if <paramref name="keyIndex"/> is currently considered
+	/// pressed (travel has crossed <see cref="PressThresholdMm"/> and not yet recovered).
+	/// </summary>
+	public bool IsKeyPressed(int keyIndex)
+	{
+		if ((uint)keyIndex >= (uint)TotalKeyCount)
+			throw new ArgumentOutOfRangeException(nameof(keyIndex),
+				$"Key index {keyIndex} is out of range [0, {TotalKeyCount - 1}].");
+		return _pressed[keyIndex];
+	}
+
+	/// <summary>
+	/// Returns <see langword="true"/> if <paramref name="key"/> is currently pressed.
+	/// Throws if <paramref name="key"/> is not present on this keyboard model.
+	/// </summary>
+	public bool IsKeyPressed(DDKey key) => IsKeyPressed(GetKeyIndex(key));
+
+	/// <summary>
+	/// Returns the layout index (0-based grid position) for <paramref name="key"/> on the
+	/// connected keyboard model. The same index is used for actuation profiles, RGB lighting,
+	/// and Last Win pairs.
+	/// </summary>
+	/// <exception cref="ArgumentException">
+	/// Thrown when <paramref name="key"/> is not present on this keyboard model.
+	/// </exception>
+	public int GetKeyIndex(DDKey key)
+	{
+		if (!_keyIndexMap.TryGetValue(key, out int index))
+			throw new ArgumentException(
+				$"Key {key} is not present on this keyboard model ({Model.Name}).", nameof(key));
+		return index;
+	}
+
+	/// <summary>
+	/// Tries to resolve the layout index for <paramref name="key"/> on the connected model.
+	/// Returns <see langword="false"/> when the key is not present on this model.
+	/// </summary>
+	public bool TryGetKeyIndex(DDKey key, out int index) =>
+		_keyIndexMap.TryGetValue(key, out index);
+
+	/// <summary>Returns <see langword="true"/> if <paramref name="key"/> exists on the connected model.</summary>
+	public bool IsKeyPresent(DDKey key) => _keyIndexMap.ContainsKey(key);
+
+	/// <summary>Fired whenever any key's travel depth changes between two consecutive polls.</summary>
+	public event EventHandler<KeyHeightChangedEventArgs>? KeyHeightChanged;
+
+	/// <summary>Fired when a key's travel crosses <see cref="PressThresholdMm"/> on the way down.</summary>
+	public event EventHandler<KeyEventArgs>? KeyDown;
+
+	/// <summary>Fired when a key's travel drops below <see cref="ReleaseThresholdMm"/> after being pressed.</summary>
+	public event EventHandler<KeyEventArgs>? KeyUp;
+
+	/// <summary>Fired after a complete press-release cycle, at the same time as <see cref="KeyUp"/>.</summary>
+	public event EventHandler<KeyEventArgs>? KeyPressed;
+
+	/// <summary>Fired once per complete poll cycle, after all key events for that cycle.</summary>
+	public event EventHandler<PolledEventArgs>? Polled;
+
+	private static PrecisionMode DeterminePrecisionMode(ModelInfo model, byte firmwareVersion)
+	{
+		if ((model.Capabilities & Capabilities.HighPrecision) != 0) return PrecisionMode.FD;
+		if ((model.Capabilities & Capabilities.KunPrecision)  != 0) return PrecisionMode.Kun;
+		if (model.KunPrecisionMinFirmware is byte threshold && firmwareVersion >= threshold)
+			return PrecisionMode.Kun;
+		return PrecisionMode.Standard;
+	}
+
+	internal KeyboardSession(IKeyboardConnection connection)
+	{
+		_connection    = connection;
+		Model          = connection.Model;
+		Variant        = connection.Variant;
+		FirmwareVersion = connection.FirmwareVersion;
+		_precisionMode = DeterminePrecisionMode(Model, FirmwareVersion);
+		MinDepthMm     = Model.MinDepthMm;
+		MaxDepthMm     = _precisionMode == PrecisionMode.Kun ? Model.KunMaxDepthMm : Model.MaxDepthMm;
+
+		var layout = KeyLayout.GetLayout(Model.Slug);
+		_rgbIndices      = KeyLayout.GetRgbIndices(Model.Slug, Variant);
+		_keyIndexMap     = KeyLayout.BuildIndexMap(layout);
+
+		int profileSize = TotalKeyCount;
+		_actuationProfile = new float[profileSize];
+		Array.Fill(_actuationProfile, 2.0f);
+		_downstrokeProfile = new float[profileSize];
+		_upstrokeProfile   = new float[profileSize];
+
+		_turboEnabled          = connection.InitialTurboValue != 0;
+		_rapidTriggerEnabled   = connection.InitialRapidTriggerEnabled != 0;
+		_lastWinRtMode         = (LastWinRapidTriggerMode)connection.InitialLastWinValue;
+		_rapidTriggerAutoMatch = connection.InitialRapidTriggerAutoMatch != 0;
+	}
+
+	/// <summary>
+	/// Opens the first detected DrunkDeer keyboard, performs the identity handshake,
+	/// and returns a ready-to-use <see cref="KeyboardSession"/>.
+	/// </summary>
+	public static KeyboardSession OpenFirst() =>
+		new(KeyboardDiscoverer.OpenFirst());
+
+	/// <summary>Starts the background poll loop. Calling while already polling is a no-op.</summary>
+	public void StartPolling(CancellationToken cancellationToken = default)
+	{
+		if (_pollTask is { IsCompleted: false })
+		{
+			_log.Warning("StartPolling called while already polling");
+			return;
+		}
+
+		_log.Information("Starting poll loop (PressThresholdMm={P}, ReleaseThresholdMm={R}, PrecisionMode={PM})",
+			PressThresholdMm, ReleaseThresholdMm, _precisionMode);
+		_pollCts  = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		_pollTask = Task.Run(() => PollLoop(_pollCts.Token), _pollCts.Token);
+	}
+
+	/// <summary>Signals the polling loop to stop and waits up to two seconds for it to exit.</summary>
+	public void StopPolling()
+	{
+		_log.Information("Stopping poll loop…");
+		_pollCts?.Cancel();
+		_pollTask?.Wait(TimeSpan.FromSeconds(2));
+		_log.Information("Poll loop stopped.");
+	}
+
+	private void PollLoop(CancellationToken ct)
+	{
+		_log.Information("PollLoop started (HasDataStream={DS}, PrecisionMode={PM}).",
+			_connection.HasDataStream, _precisionMode);
+		_connection.FlushReadBuffer();
+
+		var request = TravelRequest.Build();
+		int frameCount = _precisionMode == PrecisionMode.FD ? 5 : 3;
+		var packets = new byte[frameCount][];
+		var gotPkt = new bool[frameCount];
+		long lastTicks = Stopwatch.GetTimestamp();
+		long totalFrames = 0;
+		long droppedFrames = 0;
+
+		while (!ct.IsCancellationRequested)
+		{
+			try { _connection.Send(request); }
+			catch (Exception ex)
+			{
+				_log.Warning(ex, "PollLoop: send failed - keyboard disconnected.");
+				Disconnected?.Invoke(this, EventArgs.Empty);
+				return;
+			}
+
+			Array.Clear(gotPkt, 0, frameCount);
+			int retries = 0;
+
+			while (!AllReceived(gotPkt) && retries < 10)
+			{
+				var buf = _connection.ReceiveCommand(200);
+				if (buf is null) { retries++; continue; }
+
+				if (_precisionMode == PrecisionMode.FD)
+				{
+					if (!KeyTravelHighPrecision.Matches(buf)) { retries++; continue; }
+					int slot = FirstEmpty(gotPkt);
+					if (slot < 0) { retries++; continue; }
+					packets[slot] = buf;
+					gotPkt[slot]  = true;
+				}
+				else
+				{
+					if (!TravelResponse.Matches(buf))
+					{
+						_log.Debug("PollLoop: non-B7 during frame collection (cmd=0x{C:X2}), retry {R}",
+							buf[0], retries);
+						retries++;
+						continue;
+					}
+					int idx = TravelResponse.GetPacketIndex(buf);
+					if ((uint)idx > 2)
+					{
+						_log.Debug("PollLoop: B7 bad index {Idx}, retry {R}", idx, retries);
+						retries++;
+						continue;
+					}
+					packets[idx] = buf;
+					gotPkt[idx]  = true;
+				}
+			}
+
+			if (!AllReceived(gotPkt))
+			{
+				droppedFrames++;
+				_log.Debug("PollLoop: dropped frame #{F} (retries={R})",
+					totalFrames + droppedFrames, retries);
+				continue;
+			}
+
+			long now = Stopwatch.GetTimestamp();
+			var elapsed = TimeSpan.FromSeconds((double)(now - lastTicks) / Stopwatch.Frequency);
+			lastTicks    = now;
+			totalFrames++;
+
+			_log.Verbose("PollLoop: frame #{F} elapsed={Ms:F2}ms (dropped={D})",
+				totalFrames, elapsed.TotalMilliseconds, droppedFrames);
+
+			if (_precisionMode == PrecisionMode.FD)
+				DispatchFrameHighPrecision(packets, elapsed);
+			else
+				DispatchFrame(packets, elapsed);
+		}
+
+		_log.Information("PollLoop exiting. frames={F} dropped={D}", totalFrames, droppedFrames);
+	}
+
+	private void DispatchFrame(byte[][] packets, TimeSpan elapsed)
+	{
+		int pressRaw = (int)Math.Round(PressThresholdMm   * HeightScale);
+		int releaseRaw = (int)Math.Round(ReleaseThresholdMm * HeightScale);
+
+		for (int pkt = 0; pkt < 3; pkt++)
+		{
+			var travel = TravelResponse.GetTravel(packets[pkt]);
+			int baseIdx = PacketBase[pkt];
+			int count = PacketCount[pkt];
+
+			for (int x = 0; x < count; x++)
+			{
+				int key = baseIdx + x;
+				short h = (sbyte)travel[x];
+				short prev = _heights[key];
+				if (h == prev) continue;
+
+				_heights[key] = h;
+				_log.Verbose("Height[{I:000}] {Prev} -> {H}  (press={Ps} thresh={PT}/{RT})",
+					key, prev, h, _pressed[key], pressRaw, releaseRaw);
+
+				KeyHeightChanged?.Invoke(this, new KeyHeightChangedEventArgs(key, prev, h));
+
+				if (!_pressed[key] && h >= pressRaw)
+				{
+					_pressed[key] = true;
+					_log.Debug("KeyDown  idx={I:000} h={H}", key, h);
+					KeyDown?.Invoke(this, new KeyEventArgs(key, h));
+				}
+				else if (_pressed[key] && h < releaseRaw)
+				{
+					_pressed[key] = false;
+					_log.Debug("KeyUp    idx={I:000} h={H}", key, h);
+					var args = new KeyEventArgs(key, h);
+					KeyUp?.Invoke(this, args);
+					KeyPressed?.Invoke(this, args);
+				}
+			}
+		}
+
+		Polled?.Invoke(this, new PolledEventArgs(elapsed));
+	}
+
+	private void DispatchFrameHighPrecision(byte[][] packets, TimeSpan elapsed)
+	{
+		// 1 HP unit = 0.005 mm, so mm × 200 = raw
+		int pressRaw = (int)Math.Round(PressThresholdMm   * 200);
+		int releaseRaw = (int)Math.Round(ReleaseThresholdMm * 200);
+
+		for (int section = 0; section < 5; section++)
+		{
+			var vals = KeyTravelHighPrecision.GetKeyValues(packets[section]);
+			int baseKey = HpSectionBase[section];
+			int count = HpSectionSizes[section];
+
+			for (int x = 0; x < count; x++)
+			{
+				int key = baseKey + x;
+				ushort raw = BinaryPrimitives.ReadUInt16LittleEndian(vals.Slice(x * 2));
+				short h = (short)(raw < 40 ? 0 : raw);
+				short prev = _heights[key];
+				if (h == prev) continue;
+
+				_heights[key] = h;
+
+				KeyHeightChanged?.Invoke(this, new KeyHeightChangedEventArgs(key, prev, h));
+
+				if (!_pressed[key] && h >= pressRaw)
+				{
+					_pressed[key] = true;
+					_log.Debug("KeyDown  idx={I:000} h={H}", key, h);
+					KeyDown?.Invoke(this, new KeyEventArgs(key, h));
+				}
+				else if (_pressed[key] && h < releaseRaw)
+				{
+					_pressed[key] = false;
+					_log.Debug("KeyUp    idx={I:000} h={H}", key, h);
+					var args = new KeyEventArgs(key, h);
+					KeyUp?.Invoke(this, args);
+					KeyPressed?.Invoke(this, args);
+				}
+			}
+		}
+
+		Polled?.Invoke(this, new PolledEventArgs(elapsed));
+	}
+
+	private static bool AllReceived(bool[] flags)
+	{
+		foreach (var f in flags) if (!f) return false;
+		return true;
+	}
+
+	private static int FirstEmpty(bool[] flags)
+	{
+		for (int i = 0; i < flags.Length; i++)
+			if (!flags[i]) return i;
+		return -1;
+	}
+
+	private void EnsureNotPolling()
+	{
+		if (_pollTask is { IsCompleted: false })
+			throw new InvalidOperationException(
+				"Stop polling before issuing configuration commands.");
+	}
+
+	private void EnsureHasLogoLight()
+	{
+		if (!HasLogoLight)
+			throw new NotSupportedException(
+				$"{Model.Name} does not have a logo LED zone.");
+	}
+
+	private void EnsureHasSideLight()
+	{
+		if (!HasSideLight)
+			throw new NotSupportedException(
+				$"{Model.Name} does not have a side LED zone.");
+	}
+
+	private void EnsureHasFuncBlock()
+	{
+		if (!HasFuncBlock)
+			throw new NotSupportedException(
+				$"{Model.Name} (fw {FirmwareVersion}, {_precisionMode} precision) does not support " +
+				$"FuncBlock operations (0x55/0x05-0x06). " +
+				$"Check {nameof(HasFuncBlock)} before calling this method.");
+	}
+
+	private void EnsureHasBerserkMode()
+	{
+		if (!HasBerserkMode)
+			throw new NotSupportedException(
+				$"{Model.Name} does not support Berserk mode. " +
+				$"Check {nameof(HasBerserkMode)} before calling this method.");
+	}
+
+	/// <summary>Sets the actuation point for all keys to a uniform depth.</summary>
+	/// <param name="depthMm">
+	/// Actuation depth in mm. Must be within [<see cref="MinDepthMm"/>, <see cref="MaxDepthMm"/>].
+	/// </param>
+	public void SetActuationPoint(float depthMm)
+	{
+		EnsureNotPolling();
+		ValidateDepthMm(depthMm);
+		Array.Fill(_actuationProfile, depthMm);
+		SetKeyPointUniform(depthMm,
+			(idx, vals) => WriteActuationPointStandard.Build(idx, vals),
+			(sec, data) => WriteActuationPointHighPrecision.Build((byte)sec, data));
+	}
+
+	/// <summary>Sets per-key actuation depths.</summary>
+	/// <param name="depthsMm">
+	/// One depth (mm) per key. Length must equal <see cref="TotalKeyCount"/>.
+	/// </param>
+	public void SetActuationPoint(float[] depthsMm)
+	{
+		EnsureNotPolling();
+		SetKeyPointPerKey(depthsMm,
+			(idx, vals) => WriteActuationPointStandard.Build(idx, vals),
+			(sec, data) => WriteActuationPointHighPrecision.Build((byte)sec, data));
+		depthsMm.CopyTo(_actuationProfile, 0);
+	}
+
+	/// <summary>
+	/// Sets the actuation point for specific keys, leaving all others unchanged.
+	/// Keys not present on this model are silently skipped.
+	/// </summary>
+	/// <param name="depthMm">Depth in mm. Must be within [<see cref="MinDepthMm"/>, <see cref="MaxDepthMm"/>].</param>
+	/// <param name="keys">One or more keys to update.</param>
+	/// <example>
+	/// <code>session.SetActuationPoint(0.2f, DDKey.W, DDKey.A, DDKey.S, DDKey.D);</code>
+	/// </example>
+	public void SetActuationPoint(float depthMm, params DDKey[] keys)
+	{
+		EnsureNotPolling();
+		if (keys.Length == 0)
+			throw new ArgumentException("At least one key must be specified.", nameof(keys));
+		foreach (var key in keys)
+		{
+			if (!TryGetKeyIndex(key, out int idx))
+			{
+				_log.Warning("SetActuationPoint: key {Key} not present on {Model}; skipped.", key, Model.Name);
+				continue;
+			}
+			ValidateDepthMm(depthMm, idx);
+			_actuationProfile[idx] = depthMm;
+		}
+		SetKeyPointPerKey(_actuationProfile,
+			(idx, vals) => WriteActuationPointStandard.Build(idx, vals),
+			(sec, data) => WriteActuationPointHighPrecision.Build((byte)sec, data));
+	}
+
+	/// <summary>Sets the downstroke point for all keys to a uniform depth.</summary>
+	public void SetDownstrokePoint(float depthMm)
+	{
+		EnsureNotPolling();
+		ValidateDepthMm(depthMm);
+		Array.Fill(_downstrokeProfile, depthMm);
+		SetKeyPointUniform(depthMm,
+			(idx, vals) => WriteDownstrokePointStandard.Build(idx, vals),
+			(sec, data) => WriteDownstrokePointHighPrecision.Build((byte)sec, data));
+	}
+
+	/// <summary>Sets per-key downstroke depths.</summary>
+	/// <param name="depthsMm">One depth (mm) per key. Length must equal <see cref="TotalKeyCount"/>.</param>
+	public void SetDownstrokePoint(float[] depthsMm)
+	{
+		EnsureNotPolling();
+		SetKeyPointPerKey(depthsMm,
+			(idx, vals) => WriteDownstrokePointStandard.Build(idx, vals),
+			(sec, data) => WriteDownstrokePointHighPrecision.Build((byte)sec, data));
+		depthsMm.CopyTo(_downstrokeProfile, 0);
+	}
+
+	/// <summary>
+	/// Sets the downstroke point for specific keys, leaving all others unchanged.
+	/// Keys not present on this model are silently skipped.
+	/// </summary>
+	public void SetDownstrokePoint(float depthMm, params DDKey[] keys)
+	{
+		EnsureNotPolling();
+		if (keys.Length == 0)
+			throw new ArgumentException("At least one key must be specified.", nameof(keys));
+		foreach (var key in keys)
+		{
+			if (!TryGetKeyIndex(key, out int idx))
+			{
+				_log.Warning("SetDownstrokePoint: key {Key} not present on {Model}; skipped.", key, Model.Name);
+				continue;
+			}
+			ValidateDepthMm(depthMm, idx);
+			_downstrokeProfile[idx] = depthMm;
+		}
+		SetKeyPointPerKey(_downstrokeProfile,
+			(idx, vals) => WriteDownstrokePointStandard.Build(idx, vals),
+			(sec, data) => WriteDownstrokePointHighPrecision.Build((byte)sec, data));
+	}
+
+	/// <summary>Sets the upstroke point for all keys to a uniform depth.</summary>
+	public void SetUpstrokePoint(float depthMm)
+	{
+		EnsureNotPolling();
+		ValidateDepthMm(depthMm);
+		Array.Fill(_upstrokeProfile, depthMm);
+		SetKeyPointUniform(depthMm,
+			(idx, vals) => WriteUpstrokePointStandard.Build(idx, vals),
+			(sec, data) => WriteUpstrokePointHighPrecision.Build((byte)sec, data));
+	}
+
+	/// <summary>Sets per-key upstroke depths.</summary>
+	/// <param name="depthsMm">One depth (mm) per key. Length must equal <see cref="TotalKeyCount"/>.</param>
+	public void SetUpstrokePoint(float[] depthsMm)
+	{
+		EnsureNotPolling();
+		SetKeyPointPerKey(depthsMm,
+			(idx, vals) => WriteUpstrokePointStandard.Build(idx, vals),
+			(sec, data) => WriteUpstrokePointHighPrecision.Build((byte)sec, data));
+		depthsMm.CopyTo(_upstrokeProfile, 0);
+	}
+
+	/// <summary>
+	/// Sets the upstroke point for specific keys, leaving all others unchanged.
+	/// Keys not present on this model are silently skipped.
+	/// </summary>
+	public void SetUpstrokePoint(float depthMm, params DDKey[] keys)
+	{
+		EnsureNotPolling();
+		if (keys.Length == 0)
+			throw new ArgumentException("At least one key must be specified.", nameof(keys));
+		foreach (var key in keys)
+		{
+			if (!TryGetKeyIndex(key, out int idx))
+			{
+				_log.Warning("SetUpstrokePoint: key {Key} not present on {Model}; skipped.", key, Model.Name);
+				continue;
+			}
+			ValidateDepthMm(depthMm, idx);
+			_upstrokeProfile[idx] = depthMm;
+		}
+		SetKeyPointPerKey(_upstrokeProfile,
+			(idx, vals) => WriteUpstrokePointStandard.Build(idx, vals),
+			(sec, data) => WriteUpstrokePointHighPrecision.Build((byte)sec, data));
+	}
+
+	/// <summary>
+	/// Reads the actuation point profile and returns per-key depths in mm.
+	/// Only supported on high-precision models.
+	/// </summary>
+	public float[] ReadActuationPoint()
+	{
+		if (_precisionMode != PrecisionMode.FD)
+			throw new NotSupportedException(
+				"Actuation point read-back is only supported on high-precision models.");
+		return ReadKeyPointMm(
+			DrunkDeer.Protocol.ReadActuationPointHighPrecision.Build(),
+			ActuationPointResponseHighPrecision.Matches,
+			ActuationPointResponseHighPrecision.GetSection,
+			ActuationPointResponseHighPrecision.GetKeyValues);
+	}
+
+	/// <summary>
+	/// Reads the downstroke point profile and returns per-key depths in mm.
+	/// Only supported on high-precision models.
+	/// </summary>
+	public float[] ReadDownstrokePoint()
+	{
+		if (_precisionMode != PrecisionMode.FD)
+			throw new NotSupportedException(
+				"Downstroke point read-back is only supported on high-precision models.");
+		return ReadKeyPointMm(
+			DrunkDeer.Protocol.ReadDownstrokePointHighPrecision.Build(),
+			DownstrokePointResponseHighPrecision.Matches,
+			DownstrokePointResponseHighPrecision.GetSection,
+			DownstrokePointResponseHighPrecision.GetKeyValues);
+	}
+
+	/// <summary>
+	/// Reads the upstroke point profile and returns per-key depths in mm.
+	/// Only supported on high-precision models.
+	/// </summary>
+	public float[] ReadUpstrokePoint()
+	{
+		if (_precisionMode != PrecisionMode.FD)
+			throw new NotSupportedException(
+				"Upstroke point read-back is only supported on high-precision models.");
+		return ReadKeyPointMm(
+			DrunkDeer.Protocol.ReadUpstrokePointHighPrecision.Build(),
+			UpstrokePointResponseHighPrecision.Matches,
+			UpstrokePointResponseHighPrecision.GetSection,
+			UpstrokePointResponseHighPrecision.GetKeyValues);
+	}
+
+	private const float SafeMaxDepthMm = 3.3f;
+
+	private void ValidateDepthMm(float mm, int keyIndex = -1)
+	{
+		if (mm < MinDepthMm || mm > MaxDepthMm)
+		{
+			var location = keyIndex >= 0 ? $" for key {keyIndex}" : "";
+			throw new ArgumentOutOfRangeException(
+				nameof(mm),
+				$"Depth {mm:F3} mm{location} is outside the valid range " +
+				$"[{MinDepthMm:F2}, {MaxDepthMm:F2}] mm.");
+		}
+		if (mm > SafeMaxDepthMm)
+		{
+			var location = keyIndex >= 0 ? $" (key {keyIndex})" : "";
+			_log.Warning(
+				"Depth {Mm:F3} mm{Location} exceeds {Safe} mm - depths above this threshold may cause " +
+				"the firmware to emit repeated keypress packets while a key is held down.",
+				mm, location, SafeMaxDepthMm);
+		}
+	}
+
+	internal static byte MmToStandardUnit(float mm) =>
+		(byte)Math.Clamp((int)Math.Round(mm * 10f), 0, 255);
+
+	internal static byte MmToKunUnit(float mm) =>
+		(byte)Math.Clamp((int)Math.Round(mm * 100f), 0, 255);
+
+	private byte MmToB6Unit(float mm) =>
+		_precisionMode == PrecisionMode.Kun ? MmToKunUnit(mm) : MmToStandardUnit(mm);
+
+	internal static ushort MmToHighPrecisionUnit(float mm) => (ushort)Math.Clamp((int)Math.Round(mm * 200), 0, 65535);
+
+	private void SetKeyPointUniform(float depthMm,
+		Func<byte, ReadOnlySpan<byte>, byte[]> buildStandard,
+		Func<int, ReadOnlySpan<byte>, byte[]> buildHighPrecision)
+	{
+		if (_precisionMode == PrecisionMode.FD)
+		{
+			var raw = new ushort[HpKeyCount];
+			Array.Fill(raw, MmToHighPrecisionUnit(depthMm));
+			WriteKeyPointHighPrecision(raw, buildHighPrecision);
+		}
+		else
+		{
+			var raw = new byte[KeyCount];
+			Array.Fill(raw, MmToB6Unit(depthMm));
+			WriteKeyPointStandard(raw, buildStandard);
+		}
+	}
+
+	private void SetKeyPointPerKey(ReadOnlySpan<float> depthsMm,
+		Func<byte, ReadOnlySpan<byte>, byte[]> buildStandard,
+		Func<int, ReadOnlySpan<byte>, byte[]> buildHighPrecision)
+	{
+		int expectedCount = _precisionMode == PrecisionMode.FD ? HpKeyCount : KeyCount;
+		if (depthsMm.Length != expectedCount)
+			throw new ArgumentException(
+				$"Expected {expectedCount} depth values for this model, got {depthsMm.Length}.",
+				nameof(depthsMm));
+
+		for (int i = 0; i < depthsMm.Length; i++)
+			ValidateDepthMm(depthsMm[i], i);
+
+		if (_precisionMode == PrecisionMode.FD)
+		{
+			var raw = new ushort[HpKeyCount];
+			for (int i = 0; i < HpKeyCount; i++)
+				raw[i] = MmToHighPrecisionUnit(depthsMm[i]);
+			WriteKeyPointHighPrecision(raw, buildHighPrecision);
+		}
+		else
+		{
+			var raw = new byte[KeyCount];
+			for (int i = 0; i < KeyCount; i++)
+				raw[i] = MmToB6Unit(depthsMm[i]);
+			WriteKeyPointStandard(raw, buildStandard);
+		}
+	}
+
+	private float[] ReadKeyPointMm(
+		byte[] request,
+		Func<ReadOnlySpan<byte>, bool> matches,
+		Func<ReadOnlySpan<byte>, byte> getSection,
+		Func<ReadOnlySpan<byte>, ReadOnlySpan<byte>> getValues)
+	{
+		EnsureNotPolling();
+		var raw = ReadKeyPointRawHighPrecision(request, matches, getSection, getValues);
+		var mm = new float[HpKeyCount];
+		for (int i = 0; i < HpKeyCount; i++)
+			mm[i] = raw[i] / 200f;
+		return mm;
+	}
+
+	internal void WriteKeyPointStandard(ReadOnlySpan<byte> values,
+		Func<byte, ReadOnlySpan<byte>, byte[]> build)
+	{
+		var normalized = new byte[KeyCount];
+		values.Slice(0, Math.Min(values.Length, KeyCount)).CopyTo(normalized);
+
+		for (int pkt = 0; pkt < 3; pkt++)
+		{
+			var slice = normalized.AsSpan(PacketBase[pkt], PacketCount[pkt]);
+			var req = build((byte)pkt, slice);
+			var resp = _connection.SendAndReceive(req);
+			if (resp is null || !WriteKeyPointAcknowledgeStandard.Matches(resp))
+				throw new InvalidOperationException(
+					$"No ACK for standard key-point write packet {pkt}.");
+		}
+	}
+
+	internal void WriteKeyPointHighPrecision(ReadOnlySpan<ushort> values,
+		Func<int, ReadOnlySpan<byte>, byte[]> build)
+	{
+		var normalized = new ushort[HpKeyCount];
+		values.Slice(0, Math.Min(values.Length, HpKeyCount)).CopyTo(normalized);
+		var sectionBytes = new byte[60];
+
+		for (int sec = 0; sec < 5; sec++)
+		{
+			int baseKey = HpSectionBase[sec];
+			int count = HpSectionSizes[sec];
+			Array.Clear(sectionBytes, 0, sectionBytes.Length);
+			for (int i = 0; i < count; i++)
+				BinaryPrimitives.WriteUInt16LittleEndian(sectionBytes.AsSpan(i * 2), normalized[baseKey + i]);
+
+			var req = build(sec, sectionBytes);
+			var resp = _connection.SendAndReceive(req);
+			if (resp is null || !WriteKeyPointAcknowledgeHighPrecision.Matches(resp))
+				throw new InvalidOperationException(
+					$"No ACK for high-precision key-point write section {sec}.");
+		}
+	}
+
+	internal ushort[] ReadKeyPointRawHighPrecision(
+		byte[] request,
+		Func<ReadOnlySpan<byte>, bool> matches,
+		Func<ReadOnlySpan<byte>, byte> getSection,
+		Func<ReadOnlySpan<byte>, ReadOnlySpan<byte>> getValues)
+	{
+		var result = new ushort[HpKeyCount];
+		var received = new bool[5];
+		int got = 0;
+
+		_connection.Send(request);
+
+		int retries = 0;
+		while (got < 5 && retries < 20)
+		{
+			var resp = _connection.ReceiveCommand(500);
+			if (resp is null) { retries++; continue; }
+			if (!matches(resp)) { retries++; continue; }
+
+			int sec = getSection(resp);
+			if ((uint)sec >= 5) { retries++; continue; }
+			if (received[sec]) continue;
+
+			var vals = getValues(resp);
+			int baseKey = HpSectionBase[sec];
+			int count = HpSectionSizes[sec];
+			for (int i = 0; i < count; i++)
+				result[baseKey + i] = BinaryPrimitives.ReadUInt16LittleEndian(vals.Slice(i * 2));
+
+			received[sec] = true;
+			got++;
+		}
+
+		if (got < 5)
+			throw new InvalidOperationException(
+				$"Incomplete high-precision key-point read: only {got}/5 sections received.");
+
+		return result;
+	}
+
+	/// <summary>
+	/// Sets per-key RGB lighting by invoking <paramref name="colorForKey"/> once per
+	/// LED key. The callback receives the layout grid index (0-based key grid position)
+	/// and returns <c>(R, G, B)</c> for that key. Use <see cref="GetKeyIndex"/> to
+	/// map a <see cref="DDKey"/> to a grid index inside the callback.
+	/// </summary>
+	/// <param name="colorForKey">
+	/// Callback that maps a grid index to an RGB colour. Called once per physical LED key.
+	/// </param>
+	/// <param name="brightness">
+	/// Firmware brightness level (0-9, default 9 = maximum).
+	/// </param>
+	/// <example>
+	/// <code>
+	/// // Solid red at full brightness
+	/// session.SetLighting(_ => (255, 0, 0));
+	///
+	/// // Highlight WASD in blue, everything else off
+	/// var wasd = new[] { DDKey.W, DDKey.A, DDKey.S, DDKey.D }
+	///     .Select(k => session.GetKeyIndex(k)).ToHashSet();
+	/// session.SetLighting(gridIdx => wasd.Contains(gridIdx) ? (0, 0, 255) : (0, 0, 0));
+	/// </code>
+	/// </example>
+	public void SetLighting(Func<int, (byte R, byte G, byte B)> colorForKey, byte brightness = 9)
+	{
+		EnsureNotPolling();
+		for (int i = 0; i < _rgbIndices.Length; i++)
+		{
+			int gridPos = _rgbIndices[i];
+			var (r, g, b) = colorForKey(gridPos);
+			_rgbProfile[gridPos] = (r, g, b);
+		}
+		SendLightingPackets(BuildEntriesFromProfile(), brightness);
+	}
+
+	/// <summary>Sets every key to the same RGB colour.</summary>
+	/// <param name="r">Red channel (0-255).</param>
+	/// <param name="g">Green channel (0-255).</param>
+	/// <param name="b">Blue channel (0-255).</param>
+	/// <param name="brightness">Firmware brightness level (0-9, default 9 = maximum).</param>
+	public void SetUniformLighting(byte r, byte g, byte b, byte brightness = 9)
+	{
+		EnsureNotPolling();
+		SetLighting(_ => (r, g, b), brightness);
+	}
+
+	/// <summary>
+	/// Sets the colour of a single key. All other keys keep their previously set colours.
+	/// Turns on all RGB packets with the updated profile.
+	/// </summary>
+	/// <param name="key">The key to colour.</param>
+	/// <param name="r">Red channel (0-255).</param>
+	/// <param name="g">Green channel (0-255).</param>
+	/// <param name="b">Blue channel (0-255).</param>
+	/// <param name="brightness">Firmware brightness level (0-9, default 9 = maximum).</param>
+	/// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is not on this model.</exception>
+	public void SetKeyColor(DDKey key, byte r, byte g, byte b, byte brightness = 9)
+	{
+		EnsureNotPolling();
+		int gridIdx = GetKeyIndex(key);
+		_rgbProfile[gridIdx] = (r, g, b);
+		SendLightingPackets(BuildEntriesFromProfile(), brightness);
+	}
+
+	/// <summary>
+	/// Sets the colour of one or more keys. All other keys keep their previously set colours.
+	/// Keys not present on this model are silently skipped.
+	/// </summary>
+	/// <param name="r">Red channel (0-255).</param>
+	/// <param name="g">Green channel (0-255).</param>
+	/// <param name="b">Blue channel (0-255).</param>
+	/// <param name="brightness">Firmware brightness level (0-9, default 9 = maximum).</param>
+	/// <param name="keys">One or more keys to update.</param>
+	public void SetKeyColor(byte r, byte g, byte b, byte brightness = 9, params DDKey[] keys)
+	{
+		EnsureNotPolling();
+		if (keys.Length == 0)
+			throw new ArgumentException("At least one key must be specified.", nameof(keys));
+		foreach (var key in keys)
+		{
+			if (!TryGetKeyIndex(key, out int gridIdx))
+			{
+				_log.Warning("SetKeyColor: key {Key} not present on {Model}; skipped.", key, Model.Name);
+				continue;
+			}
+			_rgbProfile[gridIdx] = (r, g, b);
+		}
+		SendLightingPackets(BuildEntriesFromProfile(), brightness);
+	}
+
+	/// <summary>
+	/// Sets the colour of a single key by layout index. All other keys keep their previously
+	/// set colours. Use <see cref="GetKeyIndex"/> to map a <see cref="DDKey"/> to an index.
+	/// </summary>
+	/// <param name="keyIndex">Layout index (0-based).</param>
+	/// <param name="r">Red channel (0-255).</param>
+	/// <param name="g">Green channel (0-255).</param>
+	/// <param name="b">Blue channel (0-255).</param>
+	/// <param name="brightness">Firmware brightness level (0-9, default 9 = maximum).</param>
+	public void SetKeyColor(int keyIndex, byte r, byte g, byte b, byte brightness = 9)
+	{
+		EnsureNotPolling();
+		if ((uint)keyIndex >= (uint)_rgbProfile.Length)
+			throw new ArgumentOutOfRangeException(nameof(keyIndex),
+				$"Key index {keyIndex} is out of range [0, {_rgbProfile.Length - 1}].");
+		_rgbProfile[keyIndex] = (r, g, b);
+		SendLightingPackets(BuildEntriesFromProfile(), brightness);
+	}
+
+	/// <summary>Turns off all key lighting.</summary>
+	public void DisableLighting()
+	{
+		EnsureNotPolling();
+		var resp = _connection.SendAndReceive(SetLightingOff.Build());
+		if (resp is null || !RgbAcknowledge.Matches(resp))
+			throw new InvalidOperationException("No ACK for SetLightingOff.");
+	}
+
+	/// <summary>
+	/// Returns a snapshot of the current in-memory RGB profile, indexed by layout key index.
+	/// This reflects the last colours sent via <see cref="SetLighting"/>, <see cref="SetKeyColor"/>,
+	/// or <see cref="LoadLightingFromProfile"/>, not necessarily what the keyboard displays right now.
+	/// </summary>
+	public (byte R, byte G, byte B)[] GetCurrentColors()
+	{
+		var result = new (byte, byte, byte)[_rgbProfile.Length];
+		_rgbProfile.CopyTo(result, 0);
+		return result;
+	}
+
+	// Per-key stored color flash block - sub-cmd 0x0A (read) / 0x0B (write).
+	// 512 bytes per profile at address 512 × profileIndex. First 384 bytes = 128 keys × 3 RGB.
+	// Distinct from the live 0xAE push: this is the flash map used when effect = 0 (custom mode).
+	private const int StoredColorStride = 512;
+	private const int StoredColorKeyCount = 128;
+	private const int StoredColorByteCount = StoredColorKeyCount * 3; // 384
+
+	/// <summary>
+	/// Reads the stored per-key RGB colours from the keyboard's flash for the specified profile.
+	/// These are the colours the firmware uses when the lighting effect is set to custom (effect = 0).
+	/// Returns 128 entries indexed by layout key index.
+	/// </summary>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public (byte R, byte G, byte B)[] ReadStoredColors(int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		var raw = ReadExtendedGateway(0x0A, (ushort)(StoredColorStride * profileIndex), StoredColorByteCount);
+		var result = new (byte, byte, byte)[StoredColorKeyCount];
+		for (int i = 0; i < StoredColorKeyCount; i++)
+			result[i] = (raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2]);
+		return result;
+	}
+
+	/// <summary>
+	/// Writes per-key RGB colours to the keyboard's flash for the specified profile.
+	/// The keyboard uses these colours when the lighting effect is set to custom (effect = 0).
+	/// Pass exactly 128 entries indexed by layout key index.
+	/// </summary>
+	/// <param name="colors">128 RGB entries indexed by layout key index.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void WriteStoredColors((byte R, byte G, byte B)[] colors, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		if (colors.Length != StoredColorKeyCount)
+			throw new ArgumentException(
+				$"Expected {StoredColorKeyCount} color entries, got {colors.Length}.", nameof(colors));
+		var raw = new byte[StoredColorByteCount];
+		for (int i = 0; i < StoredColorKeyCount; i++)
+		{
+			raw[i * 3]     = colors[i].R;
+			raw[i * 3 + 1] = colors[i].G;
+			raw[i * 3 + 2] = colors[i].B;
+		}
+		WriteExtendedGateway(0x0B, (ushort)(StoredColorStride * profileIndex), raw);
+	}
+
+	/// <summary>
+	/// Saves the current in-memory colour profile (the colours last set via
+	/// <see cref="SetLighting"/> or <see cref="SetKeyColor"/>) to the keyboard's flash
+	/// for the specified profile slot. After saving, the colours persist on the keyboard
+	/// even after it is disconnected, and will be displayed when the lighting effect is
+	/// set to custom (effect = 0) via <see cref="SetLightCustom"/>.
+	/// </summary>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void SaveLightingToProfile(int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		var raw = new byte[StoredColorByteCount];
+		for (int i = 0; i < StoredColorKeyCount; i++)
+		{
+			var (r, g, b) = _rgbProfile[i];
+			raw[i * 3]     = r;
+			raw[i * 3 + 1] = g;
+			raw[i * 3 + 2] = b;
+		}
+		WriteExtendedGateway(0x0B, (ushort)(StoredColorStride * profileIndex), raw);
+	}
+
+	/// <summary>
+	/// Loads the stored per-key colours for the specified profile from flash into the
+	/// in-memory profile and applies them live to the keyboard.
+	/// </summary>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	/// <param name="brightness">Firmware brightness level (0-9, default 9 = maximum).</param>
+	public void LoadLightingFromProfile(int profileIndex = 0, byte brightness = 9)
+	{
+		EnsureNotPolling();
+		var raw = ReadExtendedGateway(0x0A, (ushort)(StoredColorStride * profileIndex), StoredColorByteCount);
+		for (int i = 0; i < StoredColorKeyCount; i++)
+			_rgbProfile[i] = (raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2]);
+		SendLightingPackets(BuildEntriesFromProfile(), brightness);
+	}
+
+	/// <summary>
+	/// Reads the currently displayed per-key RGB colours from the keyboard regardless of
+	/// the active lighting effect mode. Returns 128 entries indexed by layout key index.
+	/// </summary>
+	public (byte R, byte G, byte B)[] ReadLiveColors()
+	{
+		EnsureNotPolling();
+		var raw = ReadExtendedGateway(0xDE, 0, StoredColorByteCount);
+		var result = new (byte, byte, byte)[StoredColorKeyCount];
+		for (int i = 0; i < StoredColorKeyCount; i++)
+			result[i] = (raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2]);
+		return result;
+	}
+
+	private RgbEntry[] BuildEntriesFromProfile()
+	{
+		var entries = new RgbEntry[_rgbIndices.Length];
+		for (int i = 0; i < _rgbIndices.Length; i++)
+		{
+			int gridPos = _rgbIndices[i];
+			var (r, g, b) = _rgbProfile[gridPos];
+			entries[i]    = RgbEntry.Create(gridPos, r, g, b);
+		}
+		return entries;
+	}
+
+	private void SendLightingPackets(ReadOnlySpan<RgbEntry> entries, byte brightness)
+	{
+		const int EntriesPerPacket = 13;
+		int packetCount = (entries.Length + EntriesPerPacket - 1) / EntriesPerPacket;
+
+		for (int pkt = 0; pkt < packetCount; pkt++)
+		{
+			var buf = RgbKeyDataPacket.Build(isTurbo: 0, modeIndex: 0x13, brightness);
+
+			int entryBase = pkt * EntriesPerPacket;
+			int writeOffset = 8;
+
+			for (int i = 0; i < EntriesPerPacket && entryBase + i < entries.Length; i++)
+			{
+				entries[entryBase + i].Write(buf.AsSpan(writeOffset));
+				writeOffset += RgbEntry.ByteSize;
+			}
+
+			if (writeOffset < 64)
+				buf[writeOffset] = 0xFF;
+
+			var resp = _connection.SendAndReceive(buf);
+			if (resp is null || !RgbAcknowledge.Matches(resp))
+				throw new InvalidOperationException($"No ACK for RGB packet {pkt}.");
+		}
+	}
+
+	/// <summary>
+	/// Sends a CommonConfig (0xB5) packet that controls global Turbo, Rapid Trigger,
+	/// Last Win / Rapid Trigger mode, and Rapid Trigger Auto Match in a single command.
+	/// </summary>
+	/// <param name="turboMode">Enable or disable Turbo mode globally.</param>
+	/// <param name="rapidTriggerMode">Enable or disable Rapid Trigger globally.</param>
+	/// <param name="lastWinRapidTriggerMode">Which combination of Last Win and Rapid Trigger is active.</param>
+	/// <param name="rapidTriggerAutoMatch">
+	/// When <see langword="true"/>, the Rapid Trigger release threshold automatically
+	/// mirrors the press threshold (Auto Match).
+	/// </param>
+	public void SetCommonConfig(bool turboMode, bool rapidTriggerMode, LastWinRapidTriggerMode lastWinRapidTriggerMode, bool rapidTriggerAutoMatch)
+	{
+		EnsureNotPolling();
+		_turboEnabled          = turboMode;
+		_rapidTriggerEnabled   = rapidTriggerMode;
+		_lastWinRtMode         = lastWinRapidTriggerMode;
+		_rapidTriggerAutoMatch = rapidTriggerAutoMatch;
+		SendCommonConfig();
+	}
+
+	/// <summary>
+	/// Sets which combination of Last Win and Rapid Trigger is active.
+	/// </summary>
+	public void SetLastWinRapidTriggerMode(LastWinRapidTriggerMode mode)
+	{
+		EnsureNotPolling();
+		_lastWinRtMode = mode;
+		_connection.Send(Protocol.SetLastWinRapidTriggerMode.Build((byte)mode));
+	}
+
+	/// <summary>Enables or disables the Last Win Replace feature.</summary>
+	public void ConfigureLastWinReplace(bool enabled)
+	{
+		EnsureNotPolling();
+		_connection.Send(SetLastWinReplace.Build(enabled ? (byte)1 : (byte)0));
+	}
+
+	/// <summary>
+	/// Configures the Rapid Trigger Auto Match sensitivity threshold.
+	/// Pass <c>255</c> to disable Auto Match; other values are firmware-defined sensitivity levels.
+	/// </summary>
+	public void ConfigureAutoMatchMode(byte mode)
+	{
+		EnsureNotPolling();
+		_connection.Send(SetAutoMatchMode.Build(mode));
+	}
+
+	/// <summary>
+	/// Programs the Last Win pair table using raw layout indices.
+	/// Each pair links two keys that compete under Last Win - whichever was pressed most recently wins.
+	/// Pass each pair as <c>(keyA, keyB)</c> using layout indices (0-125). Maximum 14 pairs.
+	/// </summary>
+	/// <example>
+	/// <code>session.ConfigureLastWinPairs((16, 26), (17, 27));</code>
+	/// </example>
+	public void ConfigureLastWinPairs(params (int keyA, int keyB)[] pairs)
+	{
+		EnsureNotPolling();
+		if (pairs.Length > 14)
+			throw new ArgumentException(
+				$"Cannot configure {pairs.Length} last win pairs. The maximum allowed is 14.", nameof(pairs));
+
+		var buf = CreateLwPairs.Build((byte)pairs.Length);
+		int offset = 4;
+		foreach (var (keyA, keyB) in pairs)
+		{
+			var entry = new LastWinPairEntry((byte)keyA, (byte)keyB);
+			entry.Write(buf.AsSpan(offset));
+			offset += LastWinPairEntry.ByteSize;
+		}
+		_connection.Send(buf);
+	}
+
+	/// <summary>
+	/// Programs the Last Win pair table using named keys.
+	/// Each pair links two keys that compete under Last Win - whichever was pressed most recently wins.
+	/// Maximum 14 pairs. Keys not present on this model throw <see cref="ArgumentException"/>.
+	/// </summary>
+	/// <example>
+	/// <code>session.ConfigureLastWinPairs((DDKey.A, DDKey.D), (DDKey.Q, DDKey.E));</code>
+	/// </example>
+	public void ConfigureLastWinPairs(params (DDKey keyA, DDKey keyB)[] pairs)
+	{
+		EnsureNotPolling();
+		if (pairs.Length > 14)
+			throw new ArgumentException(
+				$"Cannot configure {pairs.Length} last win pairs. The maximum allowed is 14.", nameof(pairs));
+
+		var rawPairs = new (int, int)[pairs.Length];
+		for (int i = 0; i < pairs.Length; i++)
+			rawPairs[i] = (GetKeyIndex(pairs[i].keyA), GetKeyIndex(pairs[i].keyB));
+
+		ConfigureLastWinPairs(rawPairs);
+	}
+
+	/// <summary>Enables Rapid Trigger globally.</summary>
+	/// <param name="autoMatch">
+	/// When <see langword="true"/>, the Rapid Trigger release threshold automatically mirrors
+	/// the press threshold (Auto Match mode).
+	/// </param>
+	public void EnableRapidTrigger(bool autoMatch = false)
+	{
+		EnsureNotPolling();
+		_rapidTriggerEnabled   = true;
+		_rapidTriggerAutoMatch = autoMatch;
+		SendCommonConfig();
+	}
+
+	/// <summary>Disables Rapid Trigger globally.</summary>
+	public void DisableRapidTrigger()
+	{
+		EnsureNotPolling();
+		_rapidTriggerEnabled = false;
+		SendCommonConfig();
+	}
+
+	/// <summary>Enables Turbo mode globally.</summary>
+	public void EnableTurboMode()
+	{
+		EnsureNotPolling();
+		_turboEnabled = true;
+		SendCommonConfig();
+	}
+
+	/// <summary>Disables Turbo mode globally.</summary>
+	public void DisableTurboMode()
+	{
+		EnsureNotPolling();
+		_turboEnabled = false;
+		SendCommonConfig();
+	}
+
+	/// <summary>
+	/// Applies a <see cref="KeyboardProfile"/> to the keyboard. Only non-<see langword="null"/>
+	/// fields are written. When <see cref="KeyboardProfile.IsThemeOnly"/> is <see langword="true"/>
+	/// only RGB lighting is updated.
+	/// </summary>
+	public void ApplyProfile(KeyboardProfile profile)
+	{
+		EnsureNotPolling();
+
+		if (!profile.IsThemeOnly)
+		{
+			if (profile.ActuationMm.HasValue || profile.PerKeyActuationMm != null)
+			{
+				var target = (float[])_actuationProfile.Clone();
+				if (profile.ActuationMm.HasValue)
+					Array.Fill(target, profile.ActuationMm.Value);
+				if (profile.PerKeyActuationMm != null)
+					ApplyPerKeyDepth(target, profile.PerKeyActuationMm, "PerKeyActuationMm");
+				SetActuationPoint(target);
+			}
+
+			if (profile.DownstrokeMm.HasValue || profile.PerKeyDownstrokeMm != null)
+			{
+				var target = (float[])_downstrokeProfile.Clone();
+				if (profile.DownstrokeMm.HasValue)
+					Array.Fill(target, profile.DownstrokeMm.Value);
+				if (profile.PerKeyDownstrokeMm != null)
+					ApplyPerKeyDepth(target, profile.PerKeyDownstrokeMm, "PerKeyDownstrokeMm");
+				SetDownstrokePoint(target);
+			}
+
+			if (profile.UpstrokeMm.HasValue || profile.PerKeyUpstrokeMm != null)
+			{
+				var target = (float[])_upstrokeProfile.Clone();
+				if (profile.UpstrokeMm.HasValue)
+					Array.Fill(target, profile.UpstrokeMm.Value);
+				if (profile.PerKeyUpstrokeMm != null)
+					ApplyPerKeyDepth(target, profile.PerKeyUpstrokeMm, "PerKeyUpstrokeMm");
+				SetUpstrokePoint(target);
+			}
+
+			if (profile.RapidTrigger.HasValue)
+			{
+				_rapidTriggerEnabled   = profile.RapidTrigger.Value;
+				_rapidTriggerAutoMatch = profile.RapidTriggerAutoMatch ?? _rapidTriggerAutoMatch;
+				SendCommonConfig();
+			}
+			else if (profile.RapidTriggerAutoMatch.HasValue)
+			{
+				_rapidTriggerAutoMatch = profile.RapidTriggerAutoMatch.Value;
+				SendCommonConfig();
+			}
+
+			if (profile.TurboMode.HasValue)
+			{
+				_turboEnabled = profile.TurboMode.Value;
+				SendCommonConfig();
+			}
+		}
+
+		if (profile.Theme != null)
+			ApplyTheme(profile.Theme);
+	}
+
+	private void ApplyPerKeyDepth(float[] target, Dictionary<string, float> overrides, string fieldName)
+	{
+		foreach (var (name, mm) in overrides)
+		{
+			if (!Enum.TryParse<DDKey>(name, ignoreCase: true, out var key) || !TryGetKeyIndex(key, out int idx))
+			{
+				_log.Warning("ApplyProfile: unknown key '{Key}' in {Field}; skipped.", name, fieldName);
+				continue;
+			}
+			target[idx] = mm;
+		}
+	}
+
+	private void ApplyTheme(KeyboardTheme theme)
+	{
+		for (int i = 0; i < _rgbIndices.Length; i++)
+			_rgbProfile[_rgbIndices[i]] = (theme.R, theme.G, theme.B);
+
+		if (theme.Keys != null)
+		{
+			foreach (var (name, rgb) in theme.Keys)
+			{
+				if (rgb is not { Length: >= 3 })
+				{
+					_log.Warning("ApplyTheme: key '{Key}' has invalid RGB array; skipped.", name);
+					continue;
+				}
+				if (!Enum.TryParse<DDKey>(name, ignoreCase: true, out var key) || !TryGetKeyIndex(key, out int gridIdx))
+				{
+					_log.Warning("ApplyTheme: unknown key '{Key}'; skipped.", name);
+					continue;
+				}
+				_rgbProfile[gridIdx] = (rgb[0], rgb[1], rgb[2]);
+			}
+		}
+
+		SendLightingPackets(BuildEntriesFromProfile(), theme.Brightness);
+	}
+
+	private void SendCommonConfig()
+	{
+		var resp = _connection.SendAndReceive(CommonConfig.Build(
+			turboMode: _turboEnabled ? (byte)1 : (byte)0,
+			rapidTriggerMode: _rapidTriggerEnabled ? (byte)1 : (byte)0,
+			lastWinRapidTriggerMode: (byte)_lastWinRtMode,
+			rapidTriggerAutoMatch: _rapidTriggerAutoMatch ? (byte)1 : (byte)0));
+		if (resp is null || !CommonConfigAcknowledge.Matches(resp))
+			throw new InvalidOperationException("No ACK for CommonConfig.");
+	}
+
+	/// <summary>Switches the keyboard between Windows and Mac compatibility modes.</summary>
+	public void SetKeyboardMode(KeyboardMode mode)
+	{
+		EnsureNotPolling();
+		var block = FetchFuncBlock();
+		block.MacMode = mode == KeyboardMode.Mac ? (byte)1 : (byte)0;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Sets the USB polling rate. Higher rates reduce input latency at the cost of
+	/// marginally more host CPU time.
+	/// </summary>
+	public void SetReportRate(ReportRate rate)
+	{
+		EnsureNotPolling();
+		var block = FetchFuncBlock();
+		block.ReportRate = rate;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Sets the debounce level (0-7). Higher values add a longer settle window before
+	/// a key event is registered, reducing chatter from worn or noisy switches.
+	/// 0 = no added debounce.
+	/// </summary>
+	public void SetDebounce(byte level)
+	{
+		if (level > 7)
+			throw new ArgumentOutOfRangeException(nameof(level), "Debounce level must be 0-7.");
+		EnsureNotPolling();
+		var block = FetchFuncBlock();
+		block.Debounce = level;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Sets the contact stability mode level (0-3). Higher values increase stabilisation
+	/// for rattling or bouncy switches. 0 = off.
+	/// </summary>
+	public void SetStabilityMode(byte level)
+	{
+		if (level > 3)
+			throw new ArgumentOutOfRangeException(nameof(level), "Stability mode must be 0-3.");
+		EnsureNotPolling();
+		var block = FetchFuncBlock();
+		block.StabilityMode = level;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Enables Berserk mode: every key re-fires at the polling rate for as long as it is
+	/// held (auto-fire). Mutually exclusive with keystroke tracking.
+	/// </summary>
+	public void EnableBerserkMode()
+	{
+		EnsureNotPolling();
+		EnsureHasBerserkMode();
+		var block = FetchFuncBlock();
+		block.BerserkMode = true;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>Disables Berserk mode.</summary>
+	public void DisableBerserkMode()
+	{
+		EnsureNotPolling();
+		EnsureHasBerserkMode();
+		var block = FetchFuncBlock();
+		block.BerserkMode = false;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Configures key-combination locks. Pass <see langword="null"/> for any parameter to
+	/// leave that lock unchanged.
+	/// </summary>
+	/// <param name="winLock">Suppress the Windows key while gaming.</param>
+	/// <param name="altTabLock">Suppress Alt+Tab.</param>
+	/// <param name="altF4Lock">Suppress Alt+F4.</param>
+	/// <example>
+	/// <code>
+	/// // Lock Win key, leave Alt combinations unchanged
+	/// session.ConfigureKeyLocks(winLock: true);
+	///
+	/// // Unlock everything
+	/// session.ConfigureKeyLocks(winLock: false, altTabLock: false, altF4Lock: false);
+	/// </code>
+	/// </example>
+	public void ConfigureKeyLocks(bool? winLock = null, bool? altTabLock = null, bool? altF4Lock = null)
+	{
+		EnsureNotPolling();
+		var block = FetchFuncBlock();
+		if (winLock.HasValue) block.WinLock    = winLock.Value;
+		if (altTabLock.HasValue) block.AltTabLock = altTabLock.Value;
+		if (altF4Lock.HasValue) block.AltF4Lock  = altF4Lock.Value;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Activates a built-in firmware lighting animation. Use <see cref="SetLightCustom"/>
+	/// to switch back to per-key RGB set via <see cref="SetLighting"/>.
+	/// </summary>
+	/// <param name="effect">
+	/// Firmware animation preset index. Pass <c>0</c> to switch back to per-key custom RGB
+	/// (equivalent to <see cref="SetLightCustom"/>). Values 1 and above select built-in
+	/// animations; available presets vary by firmware version.
+	/// </param>
+	/// <param name="brightness">Brightness 0-9. Default 9.</param>
+	/// <param name="speed">Animation speed 0-9. Default 5.</param>
+	public void SetLightPreset(byte effect, byte brightness = 9, byte speed = 5)
+	{
+		EnsureNotPolling();
+		var block = FetchFuncBlock();
+		block.LightEffect     = effect;
+		block.LightBrightness = brightness;
+		block.LightSpeed      = speed;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Switches lighting back to custom RGB mode so colours set via
+	/// <see cref="SetLighting"/> or <see cref="SetKeyColor"/> take effect.
+	/// </summary>
+	public void SetLightCustom()
+	{
+		EnsureNotPolling();
+		var block = FetchFuncBlock();
+		block.LightEffect = 0;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Sets the single-colour tint used by the main key preset lighting effect.
+	/// Automatically enables <see cref="KeyboardFuncBlock.LightSingleColor"/>.
+	/// Has no effect when the effect index is 0 (custom RGB mode).
+	/// </summary>
+	public void SetLightPresetColor(byte r, byte g, byte b)
+	{
+		EnsureNotPolling();
+		var block = FetchFuncBlock();
+		block.LightSingleColor = true;
+		block.LightColorR = r;
+		block.LightColorG = g;
+		block.LightColorB = b;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Sets the firmware-internal sensor sampling tick rate (bits 4-7 of FuncBlock byte 4).
+	/// This controls how frequently the firmware polls sensors for rapid-trigger evaluation.
+	/// Values 0-15; higher = more frequent sampling.
+	/// </summary>
+	public void SetTickRate(byte rate)
+	{
+		EnsureNotPolling();
+		var block = FetchFuncBlock();
+		block.TickRate = rate;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Activates a built-in firmware lighting animation on the logo light zone.
+	/// Only supported on models with a dedicated logo LED (see <see cref="HasLogoLight"/>).
+	/// </summary>
+	/// <param name="effect">
+	/// Firmware animation preset index. Pass <c>0</c> to turn the logo light off.
+	/// Values 1 and above select built-in animations; available presets vary by firmware version.
+	/// </param>
+	/// <param name="brightness">Brightness 0-9. Default 9.</param>
+	/// <param name="speed">Animation speed 0-9. Default 5.</param>
+	/// <exception cref="NotSupportedException">Thrown when the connected model has no logo LED zone.</exception>
+	public void SetLogoLightPreset(byte effect, byte brightness = 9, byte speed = 5)
+	{
+		EnsureNotPolling();
+		EnsureHasLogoLight();
+		var block = FetchFuncBlock();
+		block.LogoLightEffect     = effect;
+		block.LogoLightBrightness = brightness;
+		block.LogoLightSpeed      = speed;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Turns off the logo light zone.
+	/// Only supported on models with a dedicated logo LED (see <see cref="HasLogoLight"/>).
+	/// </summary>
+	/// <exception cref="NotSupportedException">Thrown when the connected model has no logo LED zone.</exception>
+	public void SetLogoLightOff()
+	{
+		EnsureNotPolling();
+		EnsureHasLogoLight();
+		var block = FetchFuncBlock();
+		block.LogoLightEffect = 0;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Sets the single-colour tint used by the logo light preset effect.
+	/// Automatically enables <see cref="KeyboardFuncBlock.LogoLightSingleColor"/>.
+	/// Only supported on models with a dedicated logo LED (see <see cref="HasLogoLight"/>).
+	/// </summary>
+	/// <exception cref="NotSupportedException">Thrown when the connected model has no logo LED zone.</exception>
+	public void SetLogoLightColor(byte r, byte g, byte b)
+	{
+		EnsureNotPolling();
+		EnsureHasLogoLight();
+		var block = FetchFuncBlock();
+		block.LogoLightSingleColor = true;
+		block.LogoLightColorR = r;
+		block.LogoLightColorG = g;
+		block.LogoLightColorB = b;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Activates a built-in firmware lighting animation on the side light zone.
+	/// Only supported on models with a dedicated side LED strip (see <see cref="HasSideLight"/>).
+	/// </summary>
+	/// <param name="effect">
+	/// Firmware animation preset index. Pass <c>0</c> to turn the side light off.
+	/// Values 1 and above select built-in animations; available presets vary by firmware version.
+	/// </param>
+	/// <param name="brightness">Brightness 0-9. Default 9.</param>
+	/// <param name="speed">Animation speed 0-9. Default 5.</param>
+	/// <exception cref="NotSupportedException">Thrown when the connected model has no side LED zone.</exception>
+	public void SetSideLightPreset(byte effect, byte brightness = 9, byte speed = 5)
+	{
+		EnsureNotPolling();
+		EnsureHasSideLight();
+		var block = FetchFuncBlock();
+		block.SideLightEffect     = effect;
+		block.SideLightBrightness = brightness;
+		block.SideLightSpeed      = speed;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Turns off the side light zone.
+	/// Only supported on models with a dedicated side LED strip (see <see cref="HasSideLight"/>).
+	/// </summary>
+	/// <exception cref="NotSupportedException">Thrown when the connected model has no side LED zone.</exception>
+	public void SetSideLightOff()
+	{
+		EnsureNotPolling();
+		EnsureHasSideLight();
+		var block = FetchFuncBlock();
+		block.SideLightEffect = 0;
+		PushFuncBlock(block);
+	}
+
+	/// <summary>
+	/// Sets the single-colour tint used by the side light preset effect.
+	/// Automatically enables <see cref="KeyboardFuncBlock.SideLightSingleColor"/>.
+	/// Only supported on models with a dedicated side LED strip (see <see cref="HasSideLight"/>).
+	/// </summary>
+	/// <exception cref="NotSupportedException">Thrown when the connected model has no side LED zone.</exception>
+	public void SetSideLightColor(byte r, byte g, byte b)
+	{
+		EnsureNotPolling();
+		EnsureHasSideLight();
+		var block = FetchFuncBlock();
+		block.SideLightSingleColor = true;
+		block.SideLightColorR = r;
+		block.SideLightColorG = g;
+		block.SideLightColorB = b;
+		PushFuncBlock(block);
+	}
+
+	//
+	// All 0x55 operations share the same envelope:
+	//   Read:  [0x55, sub_cmd, 0x00, cs, len, addr_lo, addr_hi]
+	//   Write: [0x55, sub_cmd, 0x00, cs, len, addr_lo, addr_hi, is_last, data...]
+	//   Read  checksum = (addr_lo + addr_hi + len)                   & 0xFF
+	//   Write checksum = (len + addr_lo + addr_hi + is_last + Σdata) & 0xFF
+
+	private byte[] ReadExtendedGateway(byte subCmd, ushort baseAddr, int totalBytes)
+	{
+		EnsureHasFuncBlock();
+
+		var result = new byte[totalBytes];
+		int offset = 0, chunk = 0;
+		while (offset < totalBytes)
+		{
+			int len = Math.Min(56, totalBytes - offset);
+			ushort addr = (ushort)(baseAddr + offset);
+			byte cs = (byte)((addr & 0xFF) + (addr >> 8) + len);
+			var req = new byte[64];
+			req[0] = 0x55; req[1] = subCmd; req[2] = 0x00;
+			req[3] = cs; req[4] = (byte)len;
+			BinaryPrimitives.WriteUInt16LittleEndian(req.AsSpan(5), addr);
+			var resp = _connection.SendAndReceive(req);
+			if (resp is null || !ExtendedGatewayResponse.Matches(resp))
+				throw new InvalidOperationException(
+					$"No response for 0x55/0x{subCmd:X2} chunk {chunk} (addr=0x{addr:X4}).");
+			ExtendedGatewayResponse.GetData(resp)[..len].CopyTo(result.AsSpan(offset));
+			offset += len;
+			chunk++;
+		}
+		return result;
+	}
+
+	private void WriteExtendedGateway(byte subCmd, ushort baseAddr, ReadOnlySpan<byte> data)
+	{
+		EnsureHasFuncBlock();
+
+		int offset = 0, chunk = 0;
+		while (offset < data.Length)
+		{
+			int len = Math.Min(56, data.Length - offset);
+			ushort addr = (ushort)(baseAddr + offset);
+			byte isLast = (offset + len >= data.Length) ? (byte)1 : (byte)0;
+			var slice = data.Slice(offset, len);
+			byte cs = (byte)(len + (addr & 0xFF) + (addr >> 8) + isLast + SumBytes(slice));
+			var req = new byte[64];
+			req[0] = 0x55; req[1] = subCmd; req[2] = 0x00;
+			req[3] = cs; req[4] = (byte)len;
+			BinaryPrimitives.WriteUInt16LittleEndian(req.AsSpan(5), addr);
+			req[7] = isLast;
+			slice.CopyTo(req.AsSpan(8));
+			var resp = _connection.SendAndReceive(req);
+			if (resp is null || !ExtendedGatewayResponse.Matches(resp))
+				throw new InvalidOperationException(
+					$"No ACK for 0x55/0x{subCmd:X2} chunk {chunk} (addr=0x{addr:X4}).");
+			offset += len;
+			chunk++;
+		}
+	}
+
+	private static byte SumBytes(ReadOnlySpan<byte> data)
+	{
+		byte sum = 0;
+		foreach (var b in data) sum += b;
+		return sum;
+	}
+
+
+	private KeyboardFuncBlock FetchFuncBlock(int profileIndex = 0)
+	{
+		EnsureHasFuncBlock();
+		var block = new KeyboardFuncBlock();
+		ReadExtendedGateway(0x05, (ushort)(64 * profileIndex), 64).CopyTo(block.RawBytes, 0);
+		return block;
+	}
+
+	private void PushFuncBlock(KeyboardFuncBlock block, int profileIndex = 0)
+	{
+		EnsureHasFuncBlock();
+		WriteExtendedGateway(0x06, (ushort)(64 * profileIndex), block.RawBytes);
+	}
+
+
+	private const int KeyTriggerStride = 1024; // 128 keys × 8 bytes per profile
+
+	private byte[] FetchKeyTriggers(int profileIndex = 0) =>
+		ReadExtendedGateway(0xA0, (ushort)(KeyTriggerStride * profileIndex), KeyTriggerStride);
+
+	private void PushKeyTriggers(ReadOnlySpan<byte> data, int profileIndex = 0) =>
+		WriteExtendedGateway(0xA1, (ushort)(KeyTriggerStride * profileIndex), data);
+
+	/// <summary>
+	/// Reads all 128 per-key trigger configurations for the specified profile.
+	/// </summary>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	/// <returns>Array of 128 <see cref="KeyTriggerConfig"/> values, indexed by layout key index.</returns>
+	public KeyTriggerConfig[] ReadKeyTriggers(int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		var raw = FetchKeyTriggers(profileIndex);
+		var result = new KeyTriggerConfig[128];
+		for (int i = 0; i < 128; i++)
+			result[i] = KeyTriggerConfig.Decode(raw.AsSpan(i * 8));
+		return result;
+	}
+
+	/// <summary>
+	/// Writes all 128 per-key trigger configurations for the specified profile.
+	/// </summary>
+	/// <param name="configs">Exactly 128 configs, indexed by layout key index.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void WriteKeyTriggers(KeyTriggerConfig[] configs, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		if (configs.Length != 128)
+			throw new ArgumentException(
+				$"Expected 128 key trigger configs, got {configs.Length}.", nameof(configs));
+		var raw = new byte[KeyTriggerStride];
+		for (int i = 0; i < 128; i++)
+			KeyTriggerConfig.Encode(configs[i], raw.AsSpan(i * 8));
+		PushKeyTriggers(raw, profileIndex);
+	}
+
+	/// <summary>
+	/// Writes the trigger configuration for a single key by layout index.
+	/// Sends only 8 bytes - does not require a full read-modify-write cycle.
+	/// </summary>
+	/// <param name="keyIndex">Layout index (0-127).</param>
+	/// <param name="config">Trigger configuration to apply.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void SetKeyTrigger(int keyIndex, KeyTriggerConfig config, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		if ((uint)keyIndex >= 128)
+			throw new ArgumentOutOfRangeException(nameof(keyIndex),
+				$"Key trigger index {keyIndex} must be in [0, 127].");
+		var entry = new byte[8];
+		KeyTriggerConfig.Encode(config, entry);
+		WriteExtendedGateway(0xA1,
+			(ushort)(KeyTriggerStride * profileIndex + 8 * keyIndex), entry);
+	}
+
+	/// <summary>
+	/// Writes the trigger configuration for a single named key.
+	/// Sends only 8 bytes - does not require a full read-modify-write cycle.
+	/// </summary>
+	/// <param name="key">The key to configure.</param>
+	/// <param name="config">Trigger configuration to apply.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	/// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is not on this model.</exception>
+	public void SetKeyTrigger(DDKey key, KeyTriggerConfig config, int profileIndex = 0) =>
+		SetKeyTrigger(GetKeyIndex(key), config, profileIndex);
+
+	//
+	// Each profile contains 4 layers. Each layer contains 128 key slots × 3 bytes.
+	// Address layout: 2048 × profileIndex + 512 × layerIndex + 3 × keyIndex.
+	// Sub-commands: 0x07 = read default (factory) keys, 0x08 = read user keys,
+	//               0x09 = write user keys.
+
+	private const int KeyMapKeyCount = 128;
+	private const int KeyMapLayerCount = 4;
+	private const int KeyMapLayerStride = 512;
+	private const int KeyMapProfileStride = KeyMapLayerStride * KeyMapLayerCount; // 2048
+
+	private static ushort KeyMapAddr(int profileIndex, int layerIndex, int keyIndex = 0) =>
+		(ushort)(KeyMapProfileStride * profileIndex + KeyMapLayerStride * layerIndex + 3 * keyIndex);
+
+	private static UserKey[] DecodeKeyMap(byte[] raw)
+	{
+		var result = new UserKey[KeyMapKeyCount];
+		for (int i = 0; i < KeyMapKeyCount; i++)
+			result[i] = new UserKey { Type = raw[i * 3], Param1 = raw[i * 3 + 1], Param2 = raw[i * 3 + 2] };
+		return result;
+	}
+
+	private static void ValidateLayer(int layerIndex)
+	{
+		if ((uint)layerIndex >= KeyMapLayerCount)
+			throw new ArgumentOutOfRangeException(nameof(layerIndex),
+				$"Layer index {layerIndex} must be in [0, {KeyMapLayerCount - 1}].");
+	}
+
+	/// <summary>
+	/// Reads the user-assigned key map for a layer.
+	/// Returns 128 <see cref="UserKey"/> values indexed by layout key index.
+	/// </summary>
+	/// <param name="layerIndex">Layer (0 = base, 1 = Fn1, 2 = Fn2, 3 = Fn3). Default: 0.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public UserKey[] ReadKeyMap(int layerIndex = 0, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		ValidateLayer(layerIndex);
+		var raw = ReadExtendedGateway(0x07, KeyMapAddr(profileIndex, layerIndex), KeyMapKeyCount * 3);
+		return DecodeKeyMap(raw);
+	}
+
+	/// <summary>
+	/// Reads the factory-default key map for a layer.
+	/// Returns 128 <see cref="UserKey"/> values indexed by layout key index.
+	/// </summary>
+	/// <param name="layerIndex">Layer (0 = base, 1 = Fn1, 2 = Fn2, 3 = Fn3). Default: 0.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public UserKey[] ReadDefaultKeyMap(int layerIndex = 0, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		ValidateLayer(layerIndex);
+		var raw = ReadExtendedGateway(0x08, KeyMapAddr(profileIndex, layerIndex), KeyMapKeyCount * 3);
+		return DecodeKeyMap(raw);
+	}
+
+	/// <summary>
+	/// Writes all 128 key assignments for a layer.
+	/// </summary>
+	/// <param name="keys">Exactly 128 entries indexed by layout key index.</param>
+	/// <param name="layerIndex">Layer (0 = base, 1 = Fn1, 2 = Fn2, 3 = Fn3). Default: 0.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void WriteKeyMap(UserKey[] keys, int layerIndex = 0, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		ValidateLayer(layerIndex);
+		if (keys.Length != KeyMapKeyCount)
+			throw new ArgumentException(
+				$"Expected {KeyMapKeyCount} key entries, got {keys.Length}.", nameof(keys));
+		var raw = new byte[KeyMapKeyCount * 3];
+		for (int i = 0; i < KeyMapKeyCount; i++)
+		{
+			raw[i * 3]     = keys[i].Type;
+			raw[i * 3 + 1] = keys[i].Param1;
+			raw[i * 3 + 2] = keys[i].Param2;
+		}
+		WriteExtendedGateway(0x09, KeyMapAddr(profileIndex, layerIndex), raw);
+	}
+
+	/// <summary>
+	/// Sets a single key assignment by layout index. Sends 3 bytes - does not require
+	/// reading the full layer.
+	/// </summary>
+	/// <param name="keyIndex">Layout index (0-127).</param>
+	/// <param name="key">The assignment to apply.</param>
+	/// <param name="layerIndex">Layer (0 = base, 1 = Fn1, 2 = Fn2, 3 = Fn3). Default: 0.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void SetKey(int keyIndex, UserKey key, int layerIndex = 0, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		ValidateLayer(layerIndex);
+		if ((uint)keyIndex >= KeyMapKeyCount)
+			throw new ArgumentOutOfRangeException(nameof(keyIndex),
+				$"Key index {keyIndex} must be in [0, {KeyMapKeyCount - 1}].");
+		WriteExtendedGateway(0x09, KeyMapAddr(profileIndex, layerIndex, keyIndex),
+			[key.Type, key.Param1, key.Param2]);
+	}
+
+	/// <summary>
+	/// Sets a single key assignment by named key. Sends 3 bytes - does not require
+	/// reading the full layer.
+	/// </summary>
+	/// <param name="key">The key to remap.</param>
+	/// <param name="value">The assignment to apply.</param>
+	/// <param name="layerIndex">Layer (0 = base, 1 = Fn1, 2 = Fn2, 3 = Fn3). Default: 0.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	/// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is not on this model.</exception>
+	public void SetKey(DDKey key, UserKey value, int layerIndex = 0, int profileIndex = 0) =>
+		SetKey(GetKeyIndex(key), value, layerIndex, profileIndex);
+
+	private const int DksStride = 768;
+
+	/// <summary>Reads all 32 Dynamic Keystroke slot configurations for the specified profile.</summary>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public DynamicKeystrokeEntry[] ReadDynamicKeystrokeEntries(int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		var raw = ReadExtendedGateway(0xA2, (ushort)(DksStride * profileIndex), DksStride);
+		var result = new DynamicKeystrokeEntry[DynamicKeystrokeEntry.SlotCount];
+		for (int i = 0; i < DynamicKeystrokeEntry.SlotCount; i++)
+			result[i] = DynamicKeystrokeEntry.Decode(raw.AsSpan(i * DynamicKeystrokeEntry.ByteSize));
+		return result;
+	}
+
+	/// <summary>Writes all 32 Dynamic Keystroke slot configurations for the specified profile.</summary>
+	/// <param name="entries">Exactly 32 Dynamic Keystroke entries.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void WriteDynamicKeystrokeEntries(DynamicKeystrokeEntry[] entries, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		if (entries.Length != DynamicKeystrokeEntry.SlotCount)
+			throw new ArgumentException(
+				$"Expected {DynamicKeystrokeEntry.SlotCount} DKS entries, got {entries.Length}.", nameof(entries));
+		var raw = new byte[DksStride];
+		for (int i = 0; i < DynamicKeystrokeEntry.SlotCount; i++)
+			DynamicKeystrokeEntry.Encode(entries[i], raw.AsSpan(i * DynamicKeystrokeEntry.ByteSize));
+		WriteExtendedGateway(0xA3, (ushort)(DksStride * profileIndex), raw);
+	}
+
+	/// <summary>
+	/// Writes a single Dynamic Keystroke slot configuration. Sends 24 bytes - does not require
+	/// reading the full DKS region.
+	/// </summary>
+	/// <param name="slotIndex">DKS slot (0-31).</param>
+	/// <param name="entry">Configuration to apply.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void SetDynamicKeystrokeEntry(int slotIndex, DynamicKeystrokeEntry entry, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		if ((uint)slotIndex >= DynamicKeystrokeEntry.SlotCount)
+			throw new ArgumentOutOfRangeException(nameof(slotIndex),
+				$"DKS slot index {slotIndex} must be in [0, {DynamicKeystrokeEntry.SlotCount - 1}].");
+		var raw = new byte[DynamicKeystrokeEntry.ByteSize];
+		DynamicKeystrokeEntry.Encode(entry, raw);
+		WriteExtendedGateway(0xA3,
+			(ushort)(DksStride * profileIndex + DynamicKeystrokeEntry.ByteSize * slotIndex), raw);
+	}
+
+	private const int MtStride = 256;
+
+	/// <summary>Reads all 32 Multi-Tap slot configurations for the specified profile.</summary>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public MultiTapEntry[] ReadMultiTapEntries(int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		var raw = ReadExtendedGateway(0xA4, (ushort)(MtStride * profileIndex),
+			MultiTapEntry.SlotCount * MultiTapEntry.ByteSize);
+		var result = new MultiTapEntry[MultiTapEntry.SlotCount];
+		for (int i = 0; i < MultiTapEntry.SlotCount; i++)
+			result[i] = MultiTapEntry.Decode(raw.AsSpan(i * MultiTapEntry.ByteSize));
+		return result;
+	}
+
+	/// <summary>Writes all 32 Multi-Tap slot configurations for the specified profile.</summary>
+	/// <param name="entries">Exactly 32 Multi-Tap entries.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void WriteMultiTapEntries(MultiTapEntry[] entries, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		if (entries.Length != MultiTapEntry.SlotCount)
+			throw new ArgumentException(
+				$"Expected {MultiTapEntry.SlotCount} MT entries, got {entries.Length}.", nameof(entries));
+		var raw = new byte[MultiTapEntry.SlotCount * MultiTapEntry.ByteSize];
+		for (int i = 0; i < MultiTapEntry.SlotCount; i++)
+			MultiTapEntry.Encode(entries[i], raw.AsSpan(i * MultiTapEntry.ByteSize));
+		WriteExtendedGateway(0xA5, (ushort)(MtStride * profileIndex), raw);
+	}
+
+	/// <summary>
+	/// Writes a single Multi-Tap slot configuration. Sends 6 bytes - does not require
+	/// reading the full MT region.
+	/// </summary>
+	/// <param name="slotIndex">MT slot (0-31).</param>
+	/// <param name="entry">Configuration to apply.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void SetMultiTapEntry(int slotIndex, MultiTapEntry entry, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		if ((uint)slotIndex >= MultiTapEntry.SlotCount)
+			throw new ArgumentOutOfRangeException(nameof(slotIndex),
+				$"MT slot index {slotIndex} must be in [0, {MultiTapEntry.SlotCount - 1}].");
+		Span<byte> raw = stackalloc byte[MultiTapEntry.ByteSize];
+		MultiTapEntry.Encode(entry, raw);
+		WriteExtendedGateway(0xA5,
+			(ushort)(MtStride * profileIndex + MultiTapEntry.ByteSize * slotIndex), raw);
+	}
+
+	private const int TglStride = 128;
+	private const int TglSlotSize = 3;
+	private const int TglSlotCount = 32;
+
+	/// <summary>
+	/// Reads all 32 Toggle slot configurations for the specified profile.
+	/// Each returned <see cref="UserKey"/> is the key that toggles on/off when pressed.
+	/// </summary>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public UserKey[] ReadToggleKeyEntries(int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		var raw = ReadExtendedGateway(0xA6, (ushort)(TglStride * profileIndex),
+			TglSlotCount * TglSlotSize);
+		var result = new UserKey[TglSlotCount];
+		for (int i = 0; i < TglSlotCount; i++)
+			result[i] = new UserKey { Type = raw[i * 3], Param1 = raw[i * 3 + 1], Param2 = raw[i * 3 + 2] };
+		return result;
+	}
+
+	/// <summary>Writes all 32 Toggle slot configurations for the specified profile.</summary>
+	/// <param name="entries">Exactly 32 entries; each is the key that toggles.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void WriteToggleKeyEntries(UserKey[] entries, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		if (entries.Length != TglSlotCount)
+			throw new ArgumentException(
+				$"Expected {TglSlotCount} Toggle entries, got {entries.Length}.", nameof(entries));
+		var raw = new byte[TglSlotCount * TglSlotSize];
+		for (int i = 0; i < TglSlotCount; i++)
+		{
+			raw[i * 3]     = entries[i].Type;
+			raw[i * 3 + 1] = entries[i].Param1;
+			raw[i * 3 + 2] = entries[i].Param2;
+		}
+		WriteExtendedGateway(0xA7, (ushort)(TglStride * profileIndex), raw);
+	}
+
+	/// <summary>
+	/// Writes a single Toggle slot configuration. Sends 3 bytes - does not require
+	/// reading the full Toggle region.
+	/// </summary>
+	/// <param name="slotIndex">Toggle slot (0-31).</param>
+	/// <param name="entry">The key that toggles on/off when pressed.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void SetToggleKeyEntry(int slotIndex, UserKey entry, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		if ((uint)slotIndex >= TglSlotCount)
+			throw new ArgumentOutOfRangeException(nameof(slotIndex),
+				$"Toggle slot index {slotIndex} must be in [0, {TglSlotCount - 1}].");
+		WriteExtendedGateway(0xA7,
+			(ushort)(TglStride * profileIndex + TglSlotSize * slotIndex),
+			[entry.Type, entry.Param1, entry.Param2]);
+	}
+
+	private const int MacroStride = MacroAction.BlockSize;
+
+	/// <summary>
+	/// Reads all 32 macro slots for the specified profile.
+	/// Empty slots are returned as empty arrays.
+	/// </summary>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	/// <returns>Array of 32 elements; each element is the action sequence for that slot.</returns>
+	public MacroAction[][] ReadMacroSlots(int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		var raw = ReadExtendedGateway(0x0C, (ushort)(MacroStride * profileIndex), MacroStride);
+		return MacroAction.DecodeBlock(raw);
+	}
+
+	/// <summary>
+	/// Writes all 32 macro slots for the specified profile.
+	/// </summary>
+	/// <param name="slots">
+	/// Exactly 32 elements. Null or empty arrays produce empty slot entries.
+	/// </param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void WriteMacroSlots(MacroAction[]?[] slots, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		if (slots.Length != MacroAction.SlotCount)
+			throw new ArgumentException(
+				$"Expected {MacroAction.SlotCount} macro slots, got {slots.Length}.", nameof(slots));
+		var raw = MacroAction.EncodeBlock(slots);
+		WriteExtendedGateway(0x0D, (ushort)(MacroStride * profileIndex), raw);
+	}
+
+	/// <summary>
+	/// Writes a single macro slot. Reads the full block, replaces the slot, then writes back.
+	/// </summary>
+	/// <param name="slotIndex">Slot index (0-31).</param>
+	/// <param name="actions">Action sequence for the slot. Pass an empty array to clear.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void SetMacroSlot(int slotIndex, MacroAction[] actions, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		if ((uint)slotIndex >= MacroAction.SlotCount)
+			throw new ArgumentOutOfRangeException(nameof(slotIndex),
+				$"Macro slot index {slotIndex} must be in [0, {MacroAction.SlotCount - 1}].");
+		var slots = ReadMacroSlots(profileIndex);
+		slots[slotIndex] = actions;
+		WriteMacroSlots(slots, profileIndex);
+	}
+
+	private const int BaseBlockSize = 32;
+
+	/// <summary>
+	/// Number of profile slots the firmware supports on standard keyboard models.
+	/// Profiles are zero-based: valid indices are <c>0</c> to <c>ProfileCount − 1</c>.
+	/// </summary>
+	public const int ProfileCount = 4;
+
+	private static void ValidateProfileIndex(int profileIndex, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+	{
+		if ((uint)profileIndex >= ProfileCount)
+			throw new ArgumentOutOfRangeException(nameof(profileIndex),
+				$"{caller}: profile index must be 0–{ProfileCount - 1}, got {profileIndex}.");
+	}
+
+	/// <summary>
+	/// Tells the keyboard to switch to the specified profile immediately.
+	/// The keyboard stores the active profile index in a global base block and
+	/// the change takes effect at once on the hardware.
+	/// </summary>
+	/// <param name="profileIndex">Target profile (0-based, 0–<see cref="ProfileCount"/>−1).</param>
+	public void SwitchProfile(int profileIndex)
+	{
+		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
+		WriteExtendedGateway(0x0E, 0, [(byte)profileIndex]);
+	}
+
+	/// <summary>
+	/// Reads the currently active profile index from the keyboard.
+	/// </summary>
+	/// <returns>Zero-based profile index.</returns>
+	public int GetCurrentProfile()
+	{
+		EnsureNotPolling();
+		var raw = ReadExtendedGateway(0x04, 0, BaseBlockSize);
+		return raw[0];
+	}
+
+	/// <summary>
+	/// Reads every sub-block for the specified profile and returns a
+	/// <see cref="FullProfileData"/> snapshot containing all sections.
+	/// </summary>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public FullProfileData PullFullProfile(int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		EnsureHasFuncBlock();
+
+		var funcRaw = ReadExtendedGateway(0x05, (ushort)(64 * profileIndex), 64);
+		var funcBlock = new KeyboardFuncBlock();
+		funcRaw.CopyTo(funcBlock.RawBytes, 0);
+
+		var triggers = ReadKeyTriggers(profileIndex);
+
+		var layers = new UserKey[KeyMapLayerCount][];
+		for (int l = 0; l < KeyMapLayerCount; l++)
+			layers[l] = ReadKeyMap(l, profileIndex);
+
+		var dks = ReadDynamicKeystrokeEntries(profileIndex);
+		var mt = ReadMultiTapEntries(profileIndex);
+		var tgl = ReadToggleKeyEntries(profileIndex);
+		var mac = ReadMacroSlots(profileIndex);
+
+		return new FullProfileData
+		{
+			FuncBlock                 = funcBlock,
+			KeyTriggers               = triggers,
+			KeyMapLayers              = layers,
+			DynamicKeystrokeEntries   = dks,
+			MultiTapEntries           = mt,
+			ToggleKeyEntries                = tgl,
+			MacroSlots                = mac,
+		};
+	}
+
+	/// <summary>
+	/// Writes all non-<see langword="null"/> sections of <paramref name="data"/> to the
+	/// specified profile. Sections left <see langword="null"/> are not touched on the keyboard.
+	/// </summary>
+	/// <param name="data">Profile data to push.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void PushFullProfile(FullProfileData data, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+
+		if (data.FuncBlock != null)
+			PushFuncBlock(data.FuncBlock, profileIndex);
+
+		if (data.KeyTriggers != null)
+			WriteKeyTriggers(data.KeyTriggers, profileIndex);
+
+		if (data.KeyMapLayers != null)
+		{
+			for (int l = 0; l < KeyMapLayerCount; l++)
+			{
+				if (data.KeyMapLayers.Length > l && data.KeyMapLayers[l] != null)
+					WriteKeyMap(data.KeyMapLayers[l]!, l, profileIndex);
+			}
+		}
+
+		if (data.DynamicKeystrokeEntries != null)
+			WriteDynamicKeystrokeEntries(data.DynamicKeystrokeEntries, profileIndex);
+
+		if (data.MultiTapEntries != null)
+			WriteMultiTapEntries(data.MultiTapEntries, profileIndex);
+
+		if (data.ToggleKeyEntries != null)
+			WriteToggleKeyEntries(data.ToggleKeyEntries, profileIndex);
+
+		if (data.MacroSlots != null)
+			WriteMacroSlots(data.MacroSlots, profileIndex);
+	}
+
+	/// <summary>
+	/// Reads the current state of the specified profile from the keyboard and returns a
+	/// serialisable <see cref="KeyboardProfile"/> snapshot. Only data that maps cleanly into
+	/// <see cref="KeyboardProfile"/> is captured:
+	/// <list type="bullet">
+	/// <item>Actuation, Rapid Trigger press/release depths - uniform or per-key.</item>
+	/// <item>Rapid Trigger enabled, RT auto-match, and Turbo mode global flags (not profile-specific on firmware).</item>
+	/// <item>Single-colour lighting theme when the profile uses a single-colour preset effect.</item>
+	/// </list>
+	/// </summary>
+	/// <param name="profileIndex">Keyboard profile slot (0-based, 0–<see cref="ProfileCount"/>−1). Default: 0.</param>
+	public KeyboardProfile CaptureProfile(int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
+
+		KeyboardFuncBlock? funcBlock = HasFuncBlock ? FetchFuncBlock(profileIndex) : null;
+
+		float? uAct = null, uDs = null, uUs = null;
+		Dictionary<string, float>? perKeyAct = null, perKeyDs = null, perKeyUs = null;
+
+		if (HasFuncBlock)
+		{
+			var triggers = ReadKeyTriggers(profileIndex);
+			var indexToKey = _keyIndexMap.ToDictionary(kv => kv.Value, kv => kv.Key);
+
+			var actuations  = new Dictionary<int, float>(_keyIndexMap.Count);
+			var downstrokes = new Dictionary<int, float>(_keyIndexMap.Count);
+			var upstrokes   = new Dictionary<int, float>(_keyIndexMap.Count);
+
+			foreach (var (_, idx) in _keyIndexMap)
+			{
+				if (idx >= triggers.Length) continue;
+				var t = triggers[idx];
+				actuations[idx]  = t.Actuation / 100f;
+				downstrokes[idx] = t.RtPress   / 100f;
+				upstrokes[idx]   = t.RtRelease / 100f;
+			}
+
+			static bool IsUniform(Dictionary<int, float> map, out float value)
+			{
+				value = 0f;
+				if (map.Count == 0) return true;
+				value = map.Values.First();
+				float first = value;
+				return map.Values.All(v => MathF.Abs(v - first) < 0.05f);
+			}
+
+			Dictionary<string, float>? BuildPerKeyMap(Dictionary<int, float> source)
+			{
+				var result = new Dictionary<string, float>(source.Count, StringComparer.OrdinalIgnoreCase);
+				foreach (var (idx, mm) in source)
+					if (indexToKey.TryGetValue(idx, out var key))
+						result[key.ToString()] = mm;
+				return result;
+			}
+
+			bool uniformAct = IsUniform(actuations, out float _uAct);
+			bool uniformDs  = IsUniform(downstrokes, out float _uDs);
+			bool uniformUs  = IsUniform(upstrokes,   out float _uUs);
+
+			uAct      = uniformAct ? _uAct : null;
+			perKeyAct = uniformAct ? null  : BuildPerKeyMap(actuations);
+			uDs       = uniformDs  ? _uDs  : null;
+			perKeyDs  = uniformDs  ? null  : BuildPerKeyMap(downstrokes);
+			uUs       = uniformUs  ? _uUs  : null;
+			perKeyUs  = uniformUs  ? null  : BuildPerKeyMap(upstrokes);
+		}
+
+		KeyboardTheme? theme = null;
+		if (funcBlock is { LightSingleColor: true, LightEffect: > 0 })
+		{
+			theme = new KeyboardTheme
+			{
+				R          = funcBlock.LightColorR,
+				G          = funcBlock.LightColorG,
+				B          = funcBlock.LightColorB,
+				Brightness = funcBlock.LightBrightness,
+			};
+		}
+
+		return new KeyboardProfile
+		{
+			ActuationMm           = uAct,
+			PerKeyActuationMm     = perKeyAct,
+			DownstrokeMm          = uDs,
+			PerKeyDownstrokeMm    = perKeyDs,
+			UpstrokeMm            = uUs,
+			PerKeyUpstrokeMm      = perKeyUs,
+			RapidTrigger          = _rapidTriggerEnabled,
+			RapidTriggerAutoMatch = _rapidTriggerAutoMatch,
+			TurboMode             = _turboEnabled,
+			Theme                 = theme,
+		};
+	}
+
+	/// <summary>
+	/// Copies all profile data from <paramref name="fromSlot"/> to <paramref name="toSlot"/>
+	/// by pulling the full profile and pushing it to the target slot.
+	/// </summary>
+	/// <param name="fromSlot">Source profile index (0-based, 0–<see cref="ProfileCount"/>−1).</param>
+	/// <param name="toSlot">Destination profile index (0-based, 0–<see cref="ProfileCount"/>−1).</param>
+	public void CopyProfile(int fromSlot, int toSlot)
+	{
+		EnsureNotPolling();
+		ValidateProfileIndex(fromSlot);
+		ValidateProfileIndex(toSlot);
+		if (fromSlot == toSlot) return;
+		PushFullProfile(PullFullProfile(fromSlot), toSlot);
+	}
+
+	/// <summary>
+	/// Reads the function configuration block for the specified profile.
+	/// Modify the returned instance and pass it to <see cref="WriteFuncBlock"/> to apply changes.
+	/// </summary>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public KeyboardFuncBlock ReadFuncBlock(int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		return FetchFuncBlock(profileIndex);
+	}
+
+	/// <summary>
+	/// Writes a function configuration block back to the specified profile.
+	/// Use with <see cref="ReadFuncBlock"/> to read-modify-write the block.
+	/// </summary>
+	/// <param name="block">The block to write.</param>
+	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
+	public void WriteFuncBlock(KeyboardFuncBlock block, int profileIndex = 0)
+	{
+		EnsureNotPolling();
+		PushFuncBlock(block, profileIndex);
+	}
+
+	/// <summary>
+	/// Enters fast-transfer mode, suspending normal key processing on the firmware.
+	/// Call <see cref="StopFastTransferMode"/> after bulk write operations complete.
+	/// Wire format: JS <c>startFastModel()</c> - defined but not called in the official app.
+	/// </summary>
+	public void StartFastTransferMode()
+	{
+		EnsureNotPolling();
+		var pkt = new byte[64];
+		pkt[0] = 0x55; pkt[1] = 0x01;
+		_connection.Send(pkt);
+		_inFastMode = true;
+	}
+
+	/// <summary>
+	/// Exits fast-transfer mode, resuming normal key processing on the firmware.
+	/// Must be preceded by <see cref="StartFastTransferMode"/>. No-op if fast transfer mode is not active.
+	/// </summary>
+	public void StopFastTransferMode()
+	{
+		EnsureNotPolling();
+		if (!_inFastMode)
+		{
+			_log.Warning($"{nameof(StopFastTransferMode)} called without a preceding {nameof(StartFastTransferMode)} - nothing sent");
+			return;
+		}
+		var pkt = new byte[64];
+		pkt[0] = 0x55; pkt[1] = 0x02;
+		_connection.Send(pkt);
+		_inFastMode = false;
+	}
+
+	/// <summary>
+	/// Signals the keyboard to begin analog sensor calibration.
+	/// Call <see cref="EndCalibration"/> when calibration is complete.
+	/// The keyboard must not be polled during calibration.
+	/// </summary>
+	public void StartCalibration()
+	{
+		EnsureNotPolling();
+		var pkt = new byte[64];
+		pkt[0] = 0x55; pkt[1] = 0xA8;
+		_connection.Send(pkt);
+	}
+
+	/// <summary>
+	/// Signals the keyboard to end analog sensor calibration.
+	/// Must be preceded by <see cref="StartCalibration"/>.
+	/// </summary>
+	public void EndCalibration()
+	{
+		EnsureNotPolling();
+		var pkt = new byte[64];
+		pkt[0] = 0x55; pkt[1] = 0xA9;
+		_connection.Send(pkt);
+	}
+
+	/// <summary>
+	/// Resets all keyboard settings to factory defaults.
+	/// This operation is irreversible - all profiles, key maps, and lighting
+	/// configurations stored on the keyboard are erased.
+	/// </summary>
+	public void RestoreFactorySettings()
+	{
+		EnsureNotPolling();
+		var pkt = new byte[64];
+		pkt[0] = 0x06; pkt[1] = 0x0F; pkt[2] = 0xFF;
+		_connection.Send(pkt);
+	}
+
+	/// <summary>
+	/// Performs a soft reset (firmware reboot) of the keyboard without clearing settings.
+	/// The USB connection will briefly drop and reappear; dispose this session and
+	/// reconnect with <see cref="OpenFirst"/> after calling this method.
+	/// </summary>
+	public void Reset()
+	{
+		EnsureNotPolling();
+		var pkt = new byte[64];
+		pkt[0] = 0x55; pkt[1] = 0xEE;
+		// Byte layout matches JS: sendDeviceData(85, [238, 0, 0, 1, 0, 0, 0, 255])
+		pkt[4] = 0x01; pkt[8] = 0xFF;
+		_connection.Send(pkt);
+	}
+
+	public void Dispose()
+	{
+		if (_disposed) return;
+		_disposed = true;
+
+		try { StopPolling(); }
+		catch (Exception ex) { _log.Warning(ex, "Dispose: StopPolling faulted."); }
+
+		if (_inFastMode)
+		{
+			try
+			{
+				var pkt = new byte[64];
+				pkt[0] = 0x55; pkt[1] = 0x02;
+				_connection.Send(pkt);
+				_inFastMode = false;
+			}
+			catch (Exception ex) { _log.Warning(ex, "Dispose: EndFastMode send failed (keyboard may be disconnected)."); }
+		}
+
+		_connection.Dispose();
+	}
+}

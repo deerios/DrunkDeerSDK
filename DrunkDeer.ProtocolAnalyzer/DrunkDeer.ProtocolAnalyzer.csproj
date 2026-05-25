@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>DrunkDeer.ProtocolAnalyzer</RootNamespace>
+    <AssemblyName>DrunkDeer.ProtocolAnalyzer</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DrunkDeer/DrunkDeer.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Live USB capture via Npcap + USBPcap (same stack Wireshark uses).
+         Only exercised in live mode; PCAP file analysis does not need Npcap installed. -->
+    <PackageReference Include="SharpPcap" Version="6.*" />
+  </ItemGroup>
+</Project>
