@@ -37,14 +37,14 @@ public static class IdentityResponse
     public static bool Matches(ReadOnlySpan<byte> buf)
         => buf.Length >= 3 && buf[0] == 0xA0 && buf[1] == 0x02 && buf[2] == 0x00;
     public static ReadOnlySpan<byte> GetModel(ReadOnlySpan<byte> buf) => buf.Slice(4, 3);
-    public static byte GetFirmwareVersion(ReadOnlySpan<byte> buf) => buf[10];
+    public static byte GetFirmwareVersion(ReadOnlySpan<byte> buf) => buf[7];
     public static byte GetTurboValue(ReadOnlySpan<byte> buf) => buf[15];
     public static byte GetRapidTriggerEnabled(ReadOnlySpan<byte> buf) => buf[16];
     public static byte GetRapidTriggerPlusEnabled(ReadOnlySpan<byte> buf) => buf[18];
     public static byte GetLastWinValue(ReadOnlySpan<byte> buf) => buf[19];
-    public static byte GetRapidTriggerAutoMatch(ReadOnlySpan<byte> buf) => buf[34];
-    public static byte GetAutoMatchMode(ReadOnlySpan<byte> buf) => buf[35];
-    public static byte GetLastWinReplace(ReadOnlySpan<byte> buf) => buf[36];
+    public static byte GetRapidTriggerAutoMatch(ReadOnlySpan<byte> buf) => buf[30];
+    public static byte GetAutoMatchMode(ReadOnlySpan<byte> buf) => buf[31];
+    public static byte GetLastWinReplace(ReadOnlySpan<byte> buf) => buf[32];
 }
 
 /// <summary>
