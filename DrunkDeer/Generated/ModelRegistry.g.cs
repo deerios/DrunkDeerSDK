@@ -23,6 +23,8 @@ public static class ModelSlugs
     public const string Unk601 = "unk_601";
     public const string Unk602 = "unk_602";
     public const string X60Future = "x60_future";
+    public const string Kg645U = "kg645u";
+    public const string Kg650Uk = "kg650_uk";
 }
 
 /// <summary>A single identity entry mapping three model bytes to a model slug and variant.</summary>
@@ -107,6 +109,8 @@ public static class ModelRegistry
         new(0x0B, 0x13, 0x01, ModelSlugs.Unk601, "ansi"),
         new(0x0B, 0x15, 0x01, ModelSlugs.Unk602, "ansi"),
         new(0x0B, 0x06, 0x05, ModelSlugs.X60Future, "ansi"),
+        new(0x0D, 0x01, 0x02, ModelSlugs.Kg645U, "ansi"),
+        new(0x0F, 0x01, 0x02, ModelSlugs.Kg650Uk, "iso"),
     ];
 
     private static readonly Dictionary<string, ModelInfo> InfoBySlug = new()
@@ -296,6 +300,30 @@ public static class ModelRegistry
             Slug             = ModelSlugs.X60Future,
             Name             = "X60 Future",
             Capabilities     = Capabilities.HighPrecision | Capabilities.SideLight | Capabilities.BerserkMode,
+            LayoutSlotOffset = 0,
+            RgbPacketCount   = 7,
+            MinDepthMm       = 0.2f,
+            MaxDepthMm       = 3.3f,
+            KunPrecisionMinFirmware = null,
+            KunMaxDepthMm    = 2f,
+        },
+        [ModelSlugs.Kg645U] = new ModelInfo
+        {
+            Slug             = ModelSlugs.Kg645U,
+            Name             = "KG645U",
+            Capabilities     = Capabilities.None,
+            LayoutSlotOffset = 0,
+            RgbPacketCount   = 7,
+            MinDepthMm       = 0.2f,
+            MaxDepthMm       = 3.3f,
+            KunPrecisionMinFirmware = null,
+            KunMaxDepthMm    = 2f,
+        },
+        [ModelSlugs.Kg650Uk] = new ModelInfo
+        {
+            Slug             = ModelSlugs.Kg650Uk,
+            Name             = "KG650 UK",
+            Capabilities     = Capabilities.None,
             LayoutSlotOffset = 0,
             RgbPacketCount   = 7,
             MinDepthMm       = 0.2f,

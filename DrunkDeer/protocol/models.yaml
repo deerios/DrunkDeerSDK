@@ -261,3 +261,34 @@ models:
   #   identities:
   #     - bytes: [0x0b, 0x06, ???]   # TODO: capture from real device
   #       variant: ansi
+
+  # KG-series identities surfaced from DrunkdeerUpdaterV2.3.4/config/config.ini
+  # (the updater bundle shipped after V2.3.1). These identities don't appear
+  # in the JS bundle on the public CDN, so we have no layout map, RGB packet
+  # count, or capability data — only the type triple is known.
+  #
+  # Adding them so Resolve() returns a known slug instead of null when a user
+  # plugs one in (helps surface "unsupported model X" in logs / telemetry).
+  # All firmware_overrides values below are placeholders copied from the
+  # A75 family; treat them as untrusted defaults until real hardware can be
+  # probed. Consumers should refuse to write actuation/depth packets when
+  # Resolve returns kg645u / kg650_uk until capabilities are confirmed.
+  kg645u:
+    name: KG645U
+    capabilities: []
+    firmware_overrides:
+      min_depth_mm: 0.2      # placeholder — not verified on hardware
+      max_depth_mm: 3.3      # placeholder — not verified on hardware
+    identities:
+      - bytes: [0x0d, 0x01, 0x02]
+        variant: ansi
+
+  kg650_uk:
+    name: KG650 UK
+    capabilities: []
+    firmware_overrides:
+      min_depth_mm: 0.2      # placeholder — not verified on hardware
+      max_depth_mm: 3.3      # placeholder — not verified on hardware
+    identities:
+      - bytes: [0x0f, 0x01, 0x02]
+        variant: iso
