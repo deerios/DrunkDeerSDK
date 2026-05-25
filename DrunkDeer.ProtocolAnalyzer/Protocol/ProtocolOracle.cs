@@ -140,16 +140,16 @@ public static class ProtocolOracle
         // IdentityResponse: 0xA0 0x02 0x00 — richest field set, most firmware-sensitive
         if (IdentityResponse.Matches(b))
         {
-            if (b.Length < 37) { fail.Add($"Too short for IdentityResponse: {b.Length} < 37"); return ("IdentityResponse", false, fail, fields); }
-            fields.Add(new("firmware_version",  b[10].ToString(),                    FirmwareSensitive: true));
+            if (b.Length < 33) { fail.Add($"Too short for IdentityResponse: {b.Length} < 33"); return ("IdentityResponse", false, fail, fields); }
+            fields.Add(new("firmware_version",  b[7].ToString(),                     FirmwareSensitive: true));
             fields.Add(new("model",             $"[{b[4]:X2},{b[5]:X2},{b[6]:X2}]", FirmwareSensitive: false));
             fields.Add(new("turbo_value",       b[15].ToString(),                    FirmwareSensitive: true));
             fields.Add(new("rt_enabled",        b[16].ToString(),                    FirmwareSensitive: true));
             fields.Add(new("rt_plus_enabled",   b[18].ToString(),                    FirmwareSensitive: true));
             fields.Add(new("last_win_value",    b[19].ToString(),                    FirmwareSensitive: true));
-            fields.Add(new("rt_auto_match",     b[34].ToString(),                    FirmwareSensitive: true));
-            fields.Add(new("auto_match_mode",   b[35].ToString(),                    FirmwareSensitive: true));
-            fields.Add(new("last_win_replace",  b[36].ToString(),                    FirmwareSensitive: true));
+            fields.Add(new("rt_auto_match",     b[30].ToString(),                    FirmwareSensitive: true));
+            fields.Add(new("auto_match_mode",   b[31].ToString(),                    FirmwareSensitive: true));
+            fields.Add(new("last_win_replace",  b[32].ToString(),                    FirmwareSensitive: true));
             return ("IdentityResponse", true, fail, fields);
         }
 

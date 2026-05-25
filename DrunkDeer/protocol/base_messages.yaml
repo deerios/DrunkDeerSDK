@@ -8,18 +8,28 @@ messages:
   IdentityResponse:
     direction: response
     header: [0xA0, 0x02, 0x00]
+    # Verified against the official DrunkDeer web driver JS bundle
+    # (drunkdeer.keybord.net.cn, ~line 17802 of index.unmin.js):
+    # firmware bytes are [7] and [8] (display = "0." + str([8]) + str([7])),
+    # and the RT auto-match / auto-match-mode / last-win-replace block lives
+    # at [30][31][32] — not [10] and [34][35][36] as previously declared here.
     payload:
       _reserved_pre:                bytes[1]
       model:                        bytes[3]
-      _reserved_a:                  bytes[3]
-      firmware_version:             u8
-      _reserved_b:                  bytes[4]
+      firmware_version:             u8    # byte 7. Display is "0." + str([8]) + str([7]);
+                                          # byte 8 is the high decimal digit and is 0
+                                          # on every currently shipped firmware
+                                          # (0x09, 0x17, 0x23, 0x27, 0x55), so the
+                                          # single u8 at [7] still uniquely identifies
+                                          # the firmware version on real hardware.
+                                          # Tracked in _reserved_a (first byte = [8]).
+      _reserved_a:                  bytes[7]
       turbo_value:                  u8
       rapid_trigger_enabled:        u8
       _reserved_c:                  bytes[1]
       rapid_trigger_plus_enabled:   u8
       last_win_value:               u8
-      _reserved_d:                  bytes[14]
+      _reserved_d:                  bytes[10]
       rapid_trigger_auto_match:     u8
       auto_match_mode:              u8
       last_win_replace:             u8
