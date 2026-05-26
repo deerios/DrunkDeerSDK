@@ -116,9 +116,6 @@ session.DisableLighting();
 // Built-in animation presets (all models)
 session.SetLightingMode(LightingMode.CenterSurfing, brightness: 5, speed: 4);
 session.SetLightingMode(LightingMode.Breath, brightness: 9, speed: 2);
-// Available modes: RotateMarquee, AlwaysLight, Spectrum, Breath, LightByPress, Stars,
-//   WaveSpectrum, CenterSurfing, SurfingDown, Ripple, GlowingFish, ColorfulFountain,
-//   Traffic, GluttonousSnake, RepeatSurfing, SurfingCross, LaserKey, RandomFountain
 ```
 
 ### Firmware animation presets (programmable models)
@@ -150,7 +147,7 @@ session.SetLogoLightOff();
 
 using var session = KeyboardSession<X60Future>.OpenFirst();  // IHasSideLight
 session.SetSideLightPreset(LightPreset.Spectrum);
-session.SetSideLightColor(r: 0, g: 200, b: 255);
+session.SetSideLightColor(new RgbColor(255, 0, 128));
 ```
 
 ### RGB to a JSON file (all models)
