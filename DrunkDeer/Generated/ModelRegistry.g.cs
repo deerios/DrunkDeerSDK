@@ -47,12 +47,12 @@ public enum Capabilities
     /// <summary>Has a dedicated side LED zone (e.g. X60).</summary>
     SideLight    = 1 << 3,
     /// <summary>
-    /// Supports Berserk (Turbo) mode: every held key re-fires at the polling rate.
+    /// Supports Turbo mode: every held key re-fires at the polling rate.
     /// Confirmed on HighPrecision and always-KunPrecision models. Standard models
     /// with firmware-gated Kun do not have this flag because old firmware does not
     /// respond to the FuncBlock gateway (0x55/0x05).
     /// </summary>
-    BerserkMode  = 1 << 4,
+    TurboMode    = 1 << 4,
 }
 
 /// <summary>Static metadata for a keyboard model.</summary>
@@ -139,7 +139,7 @@ public static class ModelRegistry
         {
             Slug             = ModelSlugs.A75Ultra,
             Name             = "A75 Ultra",
-            Capabilities     = Capabilities.HighPrecision | Capabilities.LogoLight | Capabilities.BerserkMode,
+            Capabilities     = Capabilities.HighPrecision | Capabilities.LogoLight | Capabilities.TurboMode,
             LayoutSlotOffset = 0,
             RgbPacketCount   = 7,
             MinDepthMm       = 0.2f,
@@ -151,7 +151,7 @@ public static class ModelRegistry
         {
             Slug             = ModelSlugs.A75Master,
             Name             = "A75 Master",
-            Capabilities     = Capabilities.HighPrecision | Capabilities.BerserkMode,
+            Capabilities     = Capabilities.HighPrecision | Capabilities.TurboMode,
             LayoutSlotOffset = 0,
             RgbPacketCount   = 7,
             MinDepthMm       = 0.2f,
@@ -211,7 +211,7 @@ public static class ModelRegistry
         {
             Slug             = ModelSlugs.G65M1,
             Name             = "G65 m1",
-            Capabilities     = Capabilities.KunPrecision | Capabilities.BerserkMode,
+            Capabilities     = Capabilities.KunPrecision | Capabilities.TurboMode,
             LayoutSlotOffset = 21,
             RgbPacketCount   = 6,
             MinDepthMm       = 0.2f,
@@ -223,7 +223,7 @@ public static class ModelRegistry
         {
             Slug             = ModelSlugs.G65M2,
             Name             = "G65 m2",
-            Capabilities     = Capabilities.KunPrecision | Capabilities.BerserkMode,
+            Capabilities     = Capabilities.KunPrecision | Capabilities.TurboMode,
             LayoutSlotOffset = 21,
             RgbPacketCount   = 6,
             MinDepthMm       = 0.2f,
@@ -235,7 +235,7 @@ public static class ModelRegistry
         {
             Slug             = ModelSlugs.G65M3,
             Name             = "G65 m3",
-            Capabilities     = Capabilities.KunPrecision | Capabilities.BerserkMode,
+            Capabilities     = Capabilities.KunPrecision | Capabilities.TurboMode,
             LayoutSlotOffset = 21,
             RgbPacketCount   = 6,
             MinDepthMm       = 0.2f,
@@ -259,7 +259,7 @@ public static class ModelRegistry
         {
             Slug             = ModelSlugs.G60V600,
             Name             = "G60 v600",
-            Capabilities     = Capabilities.KunPrecision | Capabilities.BerserkMode,
+            Capabilities     = Capabilities.KunPrecision | Capabilities.TurboMode,
             LayoutSlotOffset = 0,
             RgbPacketCount   = 6,
             MinDepthMm       = 0.2f,
@@ -271,7 +271,7 @@ public static class ModelRegistry
         {
             Slug             = ModelSlugs.Unk601,
             Name             = "Unknown-601",
-            Capabilities     = Capabilities.KunPrecision | Capabilities.BerserkMode,
+            Capabilities     = Capabilities.KunPrecision | Capabilities.TurboMode,
             LayoutSlotOffset = 0,
             RgbPacketCount   = 7,
             MinDepthMm       = 0.2f,
@@ -283,7 +283,7 @@ public static class ModelRegistry
         {
             Slug             = ModelSlugs.Unk602,
             Name             = "Unknown-602",
-            Capabilities     = Capabilities.KunPrecision | Capabilities.BerserkMode,
+            Capabilities     = Capabilities.KunPrecision | Capabilities.TurboMode,
             LayoutSlotOffset = 0,
             RgbPacketCount   = 7,
             MinDepthMm       = 0.2f,
@@ -295,7 +295,7 @@ public static class ModelRegistry
         {
             Slug             = ModelSlugs.X60Future,
             Name             = "X60 Future",
-            Capabilities     = Capabilities.HighPrecision | Capabilities.SideLight | Capabilities.BerserkMode,
+            Capabilities     = Capabilities.HighPrecision | Capabilities.SideLight | Capabilities.TurboMode,
             LayoutSlotOffset = 0,
             RgbPacketCount   = 7,
             MinDepthMm       = 0.2f,
@@ -330,10 +330,10 @@ public static class ModelRegistry
 public sealed class A75 { }
 /// <summary>Model marker type for A75 Pro.</summary>
 public sealed class A75Pro { }
-/// <summary>Model marker type for A75 Ultra. Implements: IHasHighPrecision, IHasBerserkMode, IHasLogoLight.</summary>
-public sealed class A75Ultra : IHasHighPrecision, IHasBerserkMode, IHasLogoLight { }
-/// <summary>Model marker type for A75 Master. Implements: IHasHighPrecision, IHasBerserkMode.</summary>
-public sealed class A75Master : IHasHighPrecision, IHasBerserkMode { }
+/// <summary>Model marker type for A75 Ultra. Implements: IHasHighPrecision, IHasTurboMode, IHasLogoLight.</summary>
+public sealed class A75Ultra : IHasHighPrecision, IHasTurboMode, IHasLogoLight { }
+/// <summary>Model marker type for A75 Master. Implements: IHasHighPrecision, IHasTurboMode.</summary>
+public sealed class A75Master : IHasHighPrecision, IHasTurboMode { }
 /// <summary>Model marker type for G75.</summary>
 public sealed class G75 { }
 /// <summary>Model marker type for G75 JP.</summary>
@@ -342,19 +342,19 @@ public sealed class G75Jp { }
 public sealed class G65 { }
 /// <summary>Model marker type for G65 Lite.</summary>
 public sealed class G65Lite { }
-/// <summary>Model marker type for G65 m1. Implements: IHasBerserkMode.</summary>
-public sealed class G65M1 : IHasBerserkMode { }
-/// <summary>Model marker type for G65 m2. Implements: IHasBerserkMode.</summary>
-public sealed class G65M2 : IHasBerserkMode { }
-/// <summary>Model marker type for G65 m3. Implements: IHasBerserkMode.</summary>
-public sealed class G65M3 : IHasBerserkMode { }
+/// <summary>Model marker type for G65 m1. Implements: IHasTurboMode.</summary>
+public sealed class G65M1 : IHasTurboMode { }
+/// <summary>Model marker type for G65 m2. Implements: IHasTurboMode.</summary>
+public sealed class G65M2 : IHasTurboMode { }
+/// <summary>Model marker type for G65 m3. Implements: IHasTurboMode.</summary>
+public sealed class G65M3 : IHasTurboMode { }
 /// <summary>Model marker type for G60.</summary>
 public sealed class G60 { }
-/// <summary>Model marker type for G60 v600. Implements: IHasBerserkMode.</summary>
-public sealed class G60V600 : IHasBerserkMode { }
-/// <summary>Model marker type for Unknown-601. Implements: IHasBerserkMode.</summary>
-public sealed class Unk601 : IHasBerserkMode { }
-/// <summary>Model marker type for Unknown-602. Implements: IHasBerserkMode.</summary>
-public sealed class Unk602 : IHasBerserkMode { }
-/// <summary>Model marker type for X60 Future. Implements: IHasHighPrecision, IHasBerserkMode, IHasSideLight.</summary>
-public sealed class X60Future : IHasHighPrecision, IHasBerserkMode, IHasSideLight { }
+/// <summary>Model marker type for G60 v600. Implements: IHasTurboMode.</summary>
+public sealed class G60V600 : IHasTurboMode { }
+/// <summary>Model marker type for Unknown-601. Implements: IHasTurboMode.</summary>
+public sealed class Unk601 : IHasTurboMode { }
+/// <summary>Model marker type for Unknown-602. Implements: IHasTurboMode.</summary>
+public sealed class Unk602 : IHasTurboMode { }
+/// <summary>Model marker type for X60 Future. Implements: IHasHighPrecision, IHasTurboMode, IHasSideLight.</summary>
+public sealed class X60Future : IHasHighPrecision, IHasTurboMode, IHasSideLight { }

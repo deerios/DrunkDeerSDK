@@ -193,7 +193,7 @@ internal static class Generator
 				"kun_precision" => "Capabilities.KunPrecision",
 				"logo_light" => "Capabilities.LogoLight",
 				"side_light" => "Capabilities.SideLight",
-				"berserk_mode" => "Capabilities.BerserkMode",
+				"turbo_mode" => "Capabilities.TurboMode",
 				_ => "Capabilities.None",
 			})
 			.Where(s => s != "Capabilities.None")
@@ -239,7 +239,7 @@ internal static class Generator
 		// Capability marker interfaces for compile-time API gating.
 		var interfaces = new List<string>();
 		if (m.Capabilities.Contains("high_precision")) interfaces.Add("IHasHighPrecision");
-		if (m.Capabilities.Contains("berserk_mode"))   interfaces.Add("IHasBerserkMode");
+		if (m.Capabilities.Contains("turbo_mode"))      interfaces.Add("IHasTurboMode");
 		if (m.Capabilities.Contains("logo_light"))     interfaces.Add("IHasLogoLight");
 		if (m.Capabilities.Contains("side_light"))     interfaces.Add("IHasSideLight");
 		// kun_precision without any other FuncBlock-implying capability needs explicit IHasFuncBlock.

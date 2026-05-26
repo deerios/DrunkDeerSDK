@@ -64,7 +64,7 @@ public sealed partial class KeyboardFuncBlock
         get => (RawBytes[6] & 0x04) != 0;
         set => RawBytes[6] = (byte)(value ? RawBytes[6] | 0x04 : RawBytes[6] & 0xFB);
     }
-    public bool BerserkMode
+    public bool TurboMode
     {
         get => (RawBytes[7] & 0x01) != 0;
         set => RawBytes[7] = (byte)(value ? RawBytes[7] | 0x01 : RawBytes[7] & 0xFE);

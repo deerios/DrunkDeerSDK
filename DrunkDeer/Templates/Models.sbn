@@ -34,12 +34,12 @@ public enum Capabilities
     /// <summary>Has a dedicated side LED zone (e.g. X60).</summary>
     SideLight    = 1 << 3,
     /// <summary>
-    /// Supports Berserk (Turbo) mode: every held key re-fires at the polling rate.
+    /// Supports Turbo mode: every held key re-fires at the polling rate.
     /// Confirmed on HighPrecision and always-KunPrecision models. Standard models
     /// with firmware-gated Kun do not have this flag because old firmware does not
     /// respond to the FuncBlock gateway (0x55/0x05).
     /// </summary>
-    BerserkMode  = 1 << 4,
+    TurboMode    = 1 << 4,
 }
 
 /// <summary>Static metadata for a keyboard model.</summary>

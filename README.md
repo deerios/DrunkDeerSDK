@@ -23,21 +23,21 @@ Console.ReadLine();
 
 DrunkDeer keyboards fall into two tiers. **Programmable models** expose the full firmware surface — key remapping, macros, lighting presets, firmware profile management, and per-key trigger configuration stored in on-board flash. All other models support actuation control, Rapid Trigger, and live RGB lighting.
 
-| Model | Precision | Programmable | Berserk | Logo light | Side light |
+| Model | Precision | Programmable | Turbo | Logo light | Side light |
 |---|---|---|---|---|---|
 | A75, A75 Pro, G75, G75 Jp, G65, G65 Lite, G60 | Standard / Kun | — | — | — | — |
 | G65 M1/M2/M3, G60 V600 | Kun | ✓ | ✓ | — | — |
-| A75 Ultra | FD | ✓ | ✓ | ✓ | — |
-| A75 Master | FD | ✓ | ✓ | — | — |
-| X60 Future | FD | ✓ | ✓ | — | ✓ |
+| A75 Ultra | HighPrecision | ✓ | ✓ | ✓ | — |
+| A75 Master | HighPrecision | ✓ | ✓ | — | — |
+| X60 Future | HighPrecision | ✓ | ✓ | — | ✓ |
 
 **Capability interfaces** are used as compile-time type constraints on `KeyboardSession<TModel>`. A method only appears in IntelliSense when the model type implements the required interface.
 
 | Interface | Gates |
 |---|---|
 | `IHasFuncBlock` | All programmable-model features |
-| `IHasHighPrecision` | FD 0.005 mm precision + actuation read-back |
-| `IHasBerserkMode` | Berserk / Tachyon mode |
+| `IHasHighPrecision` | HighPrecision 0.005 mm depth + actuation read-back |
+| `IHasTurboMode` | Turbo mode FuncBlock persistence |
 | `IHasLogoLight` | Logo LED zone |
 | `IHasSideLight` | Side LED strip |
 
@@ -88,7 +88,7 @@ session.SetActuationPoints(new KeyDepthProfileBuilder()
     .Keys([DDKey.W, DDKey.A, DDKey.S, DDKey.D], 0.2f)
     .Build());
 
-// Read back current depths (FD precision models only — IHasHighPrecision)
+// Read back current depths (HighPrecision models only — IHasHighPrecision)
 using var session = KeyboardSession<A75Ultra>.OpenFirst();
 float[] depths                          = session.ReadActuationPoint();
 IReadOnlyDictionary<DDKey, float> byKey = session.ReadActuationPointByKey();
@@ -191,14 +191,13 @@ session.EnableAutoMatch(sensitivity: 1);
 session.DisableAutoMatch();
 ```
 
-### Berserk mode (`IHasBerserkMode` models)
+### Turbo mode
 
-Every held key re-fires at the polling rate for as long as it is held (auto-fire / Tachyon mode).
+Every held key re-fires at the polling rate for as long as it is held (auto-fire). Available on all models; programmable models also persist the setting to on-board flash.
 
 ```csharp
-using var session = KeyboardSession<G65M1>.OpenFirst();
-session.EnableBerserkMode();
-session.DisableBerserkMode();
+session.EnableTurboMode();
+session.DisableTurboMode();
 ```
 
 ## Programmable models
@@ -299,9 +298,9 @@ session.ApplyProfile(loaded);
 |---|---|---|
 | `Standard` | 0.1 mm | A75, A75 Pro, G75, G65, G60, … |
 | `Kun` | 0.01 mm | G65 M1/M2/M3, G60 V600, and standard models on newer firmware |
-| `FD` | 0.005 mm | A75 Ultra, A75 Master, X60 Future |
+| `HighPrecision` | 0.005 mm | A75 Ultra, A75 Master, X60 Future |
 
-`session.PrecisionMode` reports the active mode. Actuation read-back and high-precision key-point writes are only available in `FD` mode.
+`session.PrecisionMode` reports the active mode. Actuation read-back and high-precision key-point writes are only available in `HighPrecision` mode.
 
 ## Further reading
 

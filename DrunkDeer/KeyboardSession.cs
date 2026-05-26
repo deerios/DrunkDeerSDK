@@ -84,8 +84,8 @@ public enum PrecisionMode : byte
 	Standard = 0,
 	/// <summary>B6 × 100 (0.01 mm/unit). Kun switch (firmware-gated or always-Kun).</summary>
 	Kun = 1,
-	/// <summary>FD × 200 (0.005 mm/unit, u16le). A75 Ultra, A75 Master, X60 Future.</summary>
-	FD = 2,
+	/// <summary>HighPrecision (0xFD × 200, 0.005 mm/unit, u16le). A75 Ultra, A75 Master, X60 Future.</summary>
+	HighPrecision = 2,
 }
 
 /// <summary>
@@ -231,9 +231,9 @@ public class KeyboardSession : IDisposable
 
 	/// <summary>
 	/// Total number of addressable key slots for the connected model.
-	/// FD-precision models: 126. All other models: 127.
+	/// HighPrecision models: 126. All other models: 127.
 	/// </summary>
-	public int TotalKeyCount => _precisionMode == PrecisionMode.FD ? HpKeyCount : KeyCount;
+	public int TotalKeyCount => _precisionMode == PrecisionMode.HighPrecision ? HpKeyCount : KeyCount;
 
 	/// <summary>
 	/// Number of physically illuminated keys for the connected model.
@@ -252,28 +252,28 @@ public class KeyboardSession : IDisposable
 	public PrecisionMode PrecisionMode => _precisionMode;
 
 	/// <summary>
-	/// <see langword="true"/> if the connected keyboard uses FD high-precision (0.005 mm) depth
+	/// <see langword="true"/> if the connected keyboard uses HighPrecision (0xFD, 0.005 mm) depth
 	/// encoding (A75 Ultra, A75 Master, X60).
 	/// </summary>
-	public bool IsHighPrecision => _precisionMode == PrecisionMode.FD;
+	public bool IsHighPrecision => _precisionMode == PrecisionMode.HighPrecision;
 
 	internal bool HasLogoLight => (Model.Capabilities & Capabilities.LogoLight) != 0;
 
 	internal bool HasSideLight => (Model.Capabilities & Capabilities.SideLight) != 0;
 
 	/// <summary>
-	/// <see langword="true"/> if the connected keyboard supports Berserk (Turbo) mode.
+	/// <see langword="true"/> if the connected keyboard persists Turbo mode via the FuncBlock gateway.
 	/// HighPrecision models (A75 Ultra, A75 Master, X60 Future) and always-KunPrecision
 	/// models (G65 m1/m2/m3, G60 v600, Unk601/602) support this feature.
-	/// Standard-precision models with firmware-gated Kun do not expose Berserk mode
-	/// because old firmware does not respond to the FuncBlock gateway (0x55/0x05).
+	/// Standard-precision models with firmware-gated Kun do not because old firmware does
+	/// not respond to the FuncBlock gateway (0x55/0x05).
 	/// </summary>
-	internal bool HasBerserkMode => (Model.Capabilities & Capabilities.BerserkMode) != 0;
+	internal bool HasTurboMode => (Model.Capabilities & Capabilities.TurboMode) != 0;
 
 	/// <summary>
 	/// <see langword="true"/> when the FuncBlock gateway (0x55/0x05 read, 0x06 write) is
 	/// supported by the connected keyboard. Requires <see cref="PrecisionMode"/> to be
-	/// <see cref="PrecisionMode.Kun"/> or <see cref="PrecisionMode.FD"/>. Standard-precision
+	/// <see cref="PrecisionMode.Kun"/> or <see cref="PrecisionMode.HighPrecision"/>. Standard-precision
 	/// models running below their Kun firmware threshold do not respond to these sub-commands.
 	/// </summary>
 	internal bool HasFuncBlock => _precisionMode != PrecisionMode.Standard;
@@ -286,13 +286,13 @@ public class KeyboardSession : IDisposable
 
 	/// <summary>
 	/// Effective minimum actuation/downstroke/upstroke depth in mm for this connection.
-	/// Accounts for the active precision mode (standard vs Kun vs FD).
+	/// Accounts for the active precision mode (standard vs Kun vs HighPrecision).
 	/// </summary>
 	public float MinDepthMm { get; }
 
 	/// <summary>
 	/// Effective maximum actuation/downstroke/upstroke depth in mm for this connection.
-	/// Accounts for the active precision mode (standard vs Kun vs FD).
+	/// Accounts for the active precision mode (standard vs Kun vs HighPrecision).
 	/// </summary>
 	public float MaxDepthMm { get; }
 
@@ -302,17 +302,17 @@ public class KeyboardSession : IDisposable
 	/// <summary>Whether Turbo mode is currently enabled on the keyboard.</summary>
 	public bool TurboEnabled => _turboEnabled;
 
-	// mm-to-raw scale for the B7/FD travel stream: Standard=10, Kun=100, FD=200.
+	// mm-to-raw scale for the B7/0xFD travel stream: Standard=10, Kun=100, HighPrecision=200.
 	private float HeightScale => _precisionMode switch
 	{
-		PrecisionMode.FD => 200f,
+		PrecisionMode.HighPrecision => 200f,
 		PrecisionMode.Kun => 100f,
 		_ => 10f,
 	};
 
 	/// <summary>
 	/// Returns the last-polled travel depth for <paramref name="keyIndex"/> in millimetres.
-	/// Resolution: 0.1 mm (Standard), 0.01 mm (Kun), 0.005 mm (FD).
+	/// Resolution: 0.1 mm (Standard), 0.01 mm (Kun), 0.005 mm (HighPrecision).
 	/// Returns 0 when the key is at rest or has not yet been polled.
 	/// </summary>
 	public float GetKeyHeightMm(int keyIndex)
@@ -431,7 +431,7 @@ public class KeyboardSession : IDisposable
 
 	private static PrecisionMode DeterminePrecisionMode(ModelInfo model, byte firmwareVersion)
 	{
-		if ((model.Capabilities & Capabilities.HighPrecision) != 0) return PrecisionMode.FD;
+		if ((model.Capabilities & Capabilities.HighPrecision) != 0) return PrecisionMode.HighPrecision;
 		if ((model.Capabilities & Capabilities.KunPrecision)  != 0) return PrecisionMode.Kun;
 		if (model.KunPrecisionMinFirmware is byte threshold && firmwareVersion >= threshold)
 			return PrecisionMode.Kun;
@@ -502,7 +502,7 @@ public class KeyboardSession : IDisposable
 		_connection.FlushReadBuffer();
 
 		var request = TravelRequest.Build();
-		int frameCount = _precisionMode == PrecisionMode.FD ? 5 : 3;
+		int frameCount = _precisionMode == PrecisionMode.HighPrecision ? 5 : 3;
 		var packets = new byte[frameCount][];
 		var gotPkt = new bool[frameCount];
 		long lastTicks = Stopwatch.GetTimestamp();
@@ -527,7 +527,7 @@ public class KeyboardSession : IDisposable
 				var buf = _connection.ReceiveCommand(200);
 				if (buf is null) { retries++; continue; }
 
-				if (_precisionMode == PrecisionMode.FD)
+				if (_precisionMode == PrecisionMode.HighPrecision)
 				{
 					if (!KeyTravelHighPrecision.Matches(buf)) { retries++; continue; }
 					int slot = FirstEmpty(gotPkt);
@@ -572,7 +572,7 @@ public class KeyboardSession : IDisposable
 			_log.Verbose("PollLoop: frame #{F} elapsed={Ms:F2}ms (dropped={D})",
 				totalFrames, elapsed.TotalMilliseconds, droppedFrames);
 
-			if (_precisionMode == PrecisionMode.FD)
+			if (_precisionMode == PrecisionMode.HighPrecision)
 				DispatchFrameHighPrecision(packets, elapsed);
 			else
 				DispatchFrame(packets, elapsed);
@@ -699,13 +699,6 @@ public class KeyboardSession : IDisposable
 				$"Check {nameof(HasFuncBlock)} before calling this method.");
 	}
 
-	private void EnsureHasBerserkMode()
-	{
-		if (!HasBerserkMode)
-			throw new NotSupportedException(
-				$"{Model.Name} does not support Berserk mode. " +
-				$"Check {nameof(HasBerserkMode)} before calling this method.");
-	}
 
 	/// <summary>Sets the actuation point for all keys to a uniform depth.</summary>
 	/// <param name="depthMm">
@@ -888,11 +881,11 @@ public class KeyboardSession : IDisposable
 
 	/// <summary>
 	/// Reads the actuation point profile and returns per-key depths in mm.
-	/// Only supported on high-precision (FD) models.
+	/// Only supported on HighPrecision models.
 	/// </summary>
 	internal float[] ReadActuationPoint()
 	{
-		if (_precisionMode != PrecisionMode.FD)
+		if (_precisionMode != PrecisionMode.HighPrecision)
 			throw new NotSupportedException(
 				"Actuation point read-back is only supported on high-precision models.");
 		return ReadKeyPointMm(
@@ -904,11 +897,11 @@ public class KeyboardSession : IDisposable
 
 	/// <summary>
 	/// Reads the downstroke point profile and returns per-key depths in mm.
-	/// Only supported on high-precision (FD) models.
+	/// Only supported on HighPrecision models.
 	/// </summary>
 	internal float[] ReadDownstrokePoint()
 	{
-		if (_precisionMode != PrecisionMode.FD)
+		if (_precisionMode != PrecisionMode.HighPrecision)
 			throw new NotSupportedException(
 				"Downstroke point read-back is only supported on high-precision models.");
 		return ReadKeyPointMm(
@@ -920,11 +913,11 @@ public class KeyboardSession : IDisposable
 
 	/// <summary>
 	/// Reads the upstroke point profile and returns per-key depths in mm.
-	/// Only supported on high-precision (FD) models.
+	/// Only supported on HighPrecision models.
 	/// </summary>
 	internal float[] ReadUpstrokePoint()
 	{
-		if (_precisionMode != PrecisionMode.FD)
+		if (_precisionMode != PrecisionMode.HighPrecision)
 			throw new NotSupportedException(
 				"Upstroke point read-back is only supported on high-precision models.");
 		return ReadKeyPointMm(
@@ -971,7 +964,7 @@ public class KeyboardSession : IDisposable
 		Func<byte, ReadOnlySpan<byte>, byte[]> buildStandard,
 		Func<int, ReadOnlySpan<byte>, byte[]> buildHighPrecision)
 	{
-		if (_precisionMode == PrecisionMode.FD)
+		if (_precisionMode == PrecisionMode.HighPrecision)
 		{
 			var raw = new ushort[HpKeyCount];
 			Array.Fill(raw, MmToHighPrecisionUnit(depthMm));
@@ -989,7 +982,7 @@ public class KeyboardSession : IDisposable
 		Func<byte, ReadOnlySpan<byte>, byte[]> buildStandard,
 		Func<int, ReadOnlySpan<byte>, byte[]> buildHighPrecision)
 	{
-		int expectedCount = _precisionMode == PrecisionMode.FD ? HpKeyCount : KeyCount;
+		int expectedCount = _precisionMode == PrecisionMode.HighPrecision ? HpKeyCount : KeyCount;
 		if (depthsMm.Length != expectedCount)
 			throw new ArgumentException(
 				$"Expected {expectedCount} depth values for this model, got {depthsMm.Length}.",
@@ -998,7 +991,7 @@ public class KeyboardSession : IDisposable
 		for (int i = 0; i < depthsMm.Length; i++)
 			ValidateDepthMm(depthsMm[i], i);
 
-		if (_precisionMode == PrecisionMode.FD)
+		if (_precisionMode == PrecisionMode.HighPrecision)
 		{
 			var raw = new ushort[HpKeyCount];
 			for (int i = 0; i < HpKeyCount; i++)
@@ -1560,6 +1553,7 @@ public class KeyboardSession : IDisposable
 		EnsureNotPolling();
 		_turboEnabled = true;
 		SendCommonConfig();
+		if (HasTurboMode) { var b = FetchFuncBlock(); b.TurboMode = true;  PushFuncBlock(b); }
 	}
 
 	/// <summary>Disables Turbo mode globally.</summary>
@@ -1568,6 +1562,7 @@ public class KeyboardSession : IDisposable
 		EnsureNotPolling();
 		_turboEnabled = false;
 		SendCommonConfig();
+		if (HasTurboMode) { var b = FetchFuncBlock(); b.TurboMode = false; PushFuncBlock(b); }
 	}
 
 	/// <summary>
@@ -1706,29 +1701,6 @@ public class KeyboardSession : IDisposable
 		EnsureNotPolling();
 		var block = FetchFuncBlock();
 		block.StabilityMode = level;
-		PushFuncBlock(block);
-	}
-
-	/// <summary>
-	/// Enables Berserk mode: every key re-fires at the polling rate for as long as it is
-	/// held (auto-fire). Mutually exclusive with keystroke tracking.
-	/// </summary>
-	internal void EnableBerserkMode()
-	{
-		EnsureNotPolling();
-		EnsureHasBerserkMode();
-		var block = FetchFuncBlock();
-		block.BerserkMode = true;
-		PushFuncBlock(block);
-	}
-
-	/// <summary>Disables Berserk mode.</summary>
-	internal void DisableBerserkMode()
-	{
-		EnsureNotPolling();
-		EnsureHasBerserkMode();
-		var block = FetchFuncBlock();
-		block.BerserkMode = false;
 		PushFuncBlock(block);
 	}
 

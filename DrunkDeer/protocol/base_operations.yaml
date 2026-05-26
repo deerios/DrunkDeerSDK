@@ -74,7 +74,7 @@ operations:
         [1]  mac_mode (low nibble)
         [4]  report_rate (bits 0-3), tick_rate (bits 4-7)
         [6]  lock_win (bit 0), lock_alt_tab (bit 1), lock_alt_f4 (bit 2)
-        [7]  berserk_mode (bit 0), stability_mode (bits 1-2), debug_mode (bit 3), debounce (bits 5-7)
+        [7]  turbo_mode (bit 0), stability_mode (bits 1-2), debug_mode (bit 3), debounce (bits 5-7)
         [8]  light_effect
         [9]  light_brightness
         [10] light_speed

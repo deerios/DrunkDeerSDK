@@ -6,7 +6,7 @@ namespace DrunkDeer.FeatureTests.Features;
 
 /// <summary>
 /// Tests for FuncBlock-backed methods: SetKeyboardMode, SetReportRate, SetDebounce,
-/// SetStabilityMode, EnableBerserkMode, ConfigureKeyLocks, SetLightPreset, SetLightCustom.
+/// SetStabilityMode, EnableTurboMode, ConfigureKeyLocks, SetLightPreset, SetLightCustom.
 /// Each method calls FetchFuncBlock (read 64 bytes -> 2 chunks) then PushFuncBlock
 /// (write 64 bytes -> 2 chunks), so every test enqueues 4 responses via EnqueueFuncBlockCycle.
 /// The written block data is at bytes [8..] of the write packets.
@@ -145,24 +145,24 @@ public class FuncBlockTests
 		Assert.Throws<ArgumentOutOfRangeException>(() => _session.SetStabilityMode(4));
 	}
 
-	// ── EnableBerserkMode / DisableBerserkMode ────────────────────────────────
+	// ── EnableTurboMode / DisableTurboMode ───────────────────────────────────
 
 	[Test]
-	public void EnableBerserkMode_SetsBit0OfByte7()
+	public void EnableTurboMode_SetsBit0OfByte7()
 	{
 		_fake.EnqueueFuncBlockCycle();
-		_session.EnableBerserkMode();
+		_session.EnableTurboMode();
 		var block = CaptureWrittenBlock();
 		Assert.That(block[7] & 0x01, Is.EqualTo(1));
 	}
 
 	[Test]
-	public void DisableBerserkMode_ClearsBit0OfByte7()
+	public void DisableTurboMode_ClearsBit0OfByte7()
 	{
 		var existing = new byte[64];
-		existing[7] = 0x01; // BerserkMode on
+		existing[7] = 0x01; // TurboMode on
 		_fake.EnqueueFuncBlockCycle(existing);
-		_session.DisableBerserkMode();
+		_session.DisableTurboMode();
 		var block = CaptureWrittenBlock();
 		Assert.That(block[7] & 0x01, Is.EqualTo(0));
 	}

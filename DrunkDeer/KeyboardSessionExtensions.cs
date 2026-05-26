@@ -258,18 +258,6 @@ public static class KeyboardSessionExtensions
     public static IReadOnlyDictionary<DDKey, float> ReadUpstrokePointByKey<T>(this KeyboardSession<T> s)
         where T : IHasHighPrecision => s.ToKeyDictionary(s.ReadUpstrokePoint());
 
-    // ── IHasBerserkMode ──────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Enables Berserk mode: every key re-fires at the polling rate for as long as it is held.
-    /// </summary>
-    public static void EnableBerserkMode<T>(this KeyboardSession<T> s)
-        where T : IHasBerserkMode => s.EnableBerserkMode();
-
-    /// <summary>Disables Berserk mode.</summary>
-    public static void DisableBerserkMode<T>(this KeyboardSession<T> s)
-        where T : IHasBerserkMode => s.DisableBerserkMode();
-
     // ── IHasLogoLight ────────────────────────────────────────────────────────
 
     /// <summary>Activates a built-in firmware lighting animation on the logo light zone.</summary>
