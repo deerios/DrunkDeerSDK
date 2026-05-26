@@ -377,6 +377,28 @@ public static class RgbKeyDataPacket
 }
 
 /// <summary>
+/// Request message. Header: [0xAE, 0x01, 0x00].
+/// </summary>
+public static class SetLightingMode
+{
+    public static ReadOnlySpan<byte> Header => [0xAE, 0x01, 0x00];
+
+    public static byte[] Build(byte slot, byte modeCode, byte brightness, byte speed, byte tail)
+    {
+        var buf = new byte[64];
+        buf[0] = 0xAE;
+        buf[1] = 0x01;
+        buf[2] = 0x00;
+        buf[3] = slot;
+        buf[4] = modeCode;
+        buf[5] = brightness;
+        buf[6] = speed;
+        buf[7] = tail;
+        return buf;
+    }
+}
+
+/// <summary>
 /// Request message. Header: [0xAE, 0x01, 0x00, 0x00, 0x05, 0x09].
 /// </summary>
 public static class SetLightingOff

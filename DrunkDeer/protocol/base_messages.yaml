@@ -221,6 +221,20 @@ messages:
         terminated_by: 0xFF
     padding_to: 64
 
+  # Sets the active RGB mode WITHOUT per-key colour data. Used for the
+  # built-in firmware animations (Spectrum, Breath, Ripple, etc.) where
+  # the firmware generates per-key colours from mode_code alone.
+  SetLightingMode:
+    direction: request
+    header: [0xAE, 0x01, 0x00]
+    payload:
+      slot:        u8
+      mode_code:   u8
+      brightness:  u8
+      speed:       u8
+      tail:        u8
+    padding_to: 64
+
   SetLightingOff:
     direction: request
     header: [0xAE, 0x01, 0x00, 0x00, 0x05, 0x09]

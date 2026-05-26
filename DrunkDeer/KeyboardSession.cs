@@ -60,6 +60,34 @@ public enum LastWinRapidTriggerMode : byte
 }
 
 /// <summary>
+/// Wire mode codes for <see cref="KeyboardSession.SetLightingMode"/>.
+/// Only values confirmed by USB capture are given named constants; pass raw bytes for
+/// modes not yet mapped. The full firmware catalogue (26 modes) is listed below.
+/// </summary>
+/// <remarks>
+/// Known wire codes (confirmed):
+/// <list type="table">
+/// <item><term>0x05</term><description>Off / firmware default (observed via SetLightingOff opcode)</description></item>
+/// <item><term>0x12</term><description>Colorful Fountain (confirmed by capture)</description></item>
+/// </list>
+/// Remaining mode names extracted from firmware locale strings; wire codes unknown:
+/// Rotate Marquee, Wave Spectrum, Surf to the Right, Breath, Center Surfing, Spectrum,
+/// Ripple, Always Light, Light by Press, Serpentine to the Centre, Laser Key,
+/// Glowing Fish, Surfing Cross, Heart, Traffic, Gluttonous Snake, Raindrops, Stars,
+/// Surfing Down, Repeat Surfing, Random Fountain, Dance of Demons.
+/// Modes "Turbo mode light" and "Custom light" require per-key colour data —
+/// use <see cref="KeyboardSession.SetLighting"/> for those instead.
+/// </remarks>
+public static class LightingMode
+{
+	/// <summary>Turns off lighting / firmware default state. Wire code 0x05.</summary>
+	public const byte Off = 0x05;
+
+	/// <summary>Colorful Fountain animation. Wire code 0x12 (confirmed by USB capture).</summary>
+	public const byte ColorfulFountain = 0x12;
+}
+
+/// <summary>
 /// High-level wrapper around <see cref="KeyboardConnection"/> that runs a background
 /// poll loop and raises typed events for key travel changes, presses, and releases.
 /// Also exposes configuration methods for actuation points, lighting, and global options.
@@ -1076,6 +1104,26 @@ public sealed class KeyboardSession : IDisposable
 				$"Key index {keyIndex} is out of range [0, {_rgbProfile.Length - 1}].");
 		_rgbProfile[keyIndex] = (r, g, b);
 		SendLightingPackets(BuildEntriesFromProfile(), brightness);
+	}
+
+	/// <summary>
+	/// Activates a built-in firmware lighting animation by wire mode code.
+	/// Takes effect immediately on all models (AE direct path, no FuncBlock required).
+	/// </summary>
+	/// <param name="modeCode">
+	/// Firmware animation mode code. Use the <see cref="LightingMode"/> constants for
+	/// known values. Modes that require per-key colour data (Turbo and Custom) must use
+	/// <see cref="SetLighting"/> instead.
+	/// </param>
+	/// <param name="brightness">Brightness level 0–9. Default 9.</param>
+	/// <param name="speed">Animation speed 0–9. Default 5.</param>
+	public void SetLightingMode(byte modeCode, byte brightness = 9, byte speed = 5)
+	{
+		EnsureNotPolling();
+		var resp = _connection.SendAndReceive(Protocol.SetLightingMode.Build(
+			slot: 0, modeCode, brightness, speed, tail: 0));
+		if (resp is null || !RgbAcknowledge.Matches(resp))
+			throw new InvalidOperationException("No ACK for SetLightingMode.");
 	}
 
 	/// <summary>Turns off all key lighting.</summary>
