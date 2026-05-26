@@ -21,15 +21,15 @@ Console.ReadLine();
 
 ## Model overview
 
-DrunkDeer keyboards fall into two tiers. **Programmable models** expose the full firmware surface — key remapping, macros, lighting presets, firmware profile management, and per-key trigger configuration stored in on-board flash. All other models support actuation control, Rapid Trigger, and live RGB lighting.
+DrunkDeer keyboards fall into two tiers. **Programmable models** expose the full firmware surface - key remapping, macros, lighting presets, firmware profile management, and per-key trigger configuration stored in on-board flash. All other models support actuation control, Rapid Trigger, and live RGB lighting.
 
 | Model | Precision | Programmable | Turbo | Logo light | Side light |
 |---|---|---|---|---|---|
-| A75, A75 Pro, G75, G75 Jp, G65, G65 Lite, G60 | Standard / Kun | — | — | — | — |
-| G65 M1/M2/M3, G60 V600 | Kun | ✓ | ✓ | — | — |
-| A75 Ultra | HighPrecision | ✓ | ✓ | ✓ | — |
-| A75 Master | HighPrecision | ✓ | ✓ | — | — |
-| X60 Future | HighPrecision | ✓ | ✓ | — | ✓ |
+| A75, A75 Pro, G75, G75 Jp, G65, G65 Lite, G60 | Standard / Kun | - | - | - | - |
+| G65 M1/M2/M3, G60 V600 | Kun | ✓ | ✓ | - | - |
+| A75 Ultra | HighPrecision | ✓ | ✓ | ✓ | - |
+| A75 Master | HighPrecision | ✓ | ✓ | - | - |
+| X60 Future | HighPrecision | ✓ | ✓ | - | ✓ |
 
 **Capability interfaces** are used as compile-time type constraints on `KeyboardSession<TModel>`. A method only appears in IntelliSense when the model type implements the required interface.
 
@@ -42,10 +42,10 @@ DrunkDeer keyboards fall into two tiers. **Programmable models** expose the full
 | `IHasSideLight` | Side LED strip |
 
 ```csharp
-// Typed — only the methods your model supports appear in IntelliSense
+// Typed - only the methods your model supports appear in IntelliSense
 using var session = KeyboardSession<A75Ultra>.OpenFirst();
 
-// Untyped — for code that doesn't know the model at compile time
+// Untyped - for code that doesn't know the model at compile time
 using var session = KeyboardSession.OpenFirst();
 // Polling, key events, actuation, and live RGB are available on all models
 ```
@@ -69,12 +69,12 @@ IReadOnlyDictionary<DDKey, float> byKey = session.GetAllKeyHeightsMmByKey();
 bool pressed  = session.IsKeyPressed(DDKey.W);
 ```
 
-> Configuration methods require polling to be stopped — an exception is thrown if called while actively polling.
+> Configuration methods require polling to be stopped - an exception is thrown if called while actively polling.
 
 ## Actuation, downstroke, and upstroke
 
 ```csharp
-// Uniform — all keys
+// Uniform - all keys
 session.SetActuationPoint(1.5f);
 session.SetDownstrokePoint(0.2f);
 session.SetUpstrokePoint(0.1f);
@@ -88,7 +88,7 @@ session.SetActuationPoints(new KeyDepthProfileBuilder()
     .Keys([DDKey.W, DDKey.A, DDKey.S, DDKey.D], 0.2f)
     .Build());
 
-// Read back current depths (HighPrecision models only — IHasHighPrecision)
+// Read back current depths (HighPrecision models only - IHasHighPrecision)
 using var session = KeyboardSession<A75Ultra>.OpenFirst();
 float[] depths                          = session.ReadActuationPoint();
 IReadOnlyDictionary<DDKey, float> byKey = session.ReadActuationPointByKey();
@@ -100,7 +100,7 @@ Valid range: `session.MinDepthMm` – `session.MaxDepthMm`.
 ## RGB lighting
 
 ```csharp
-// Uniform colour — raw channels or RgbColor struct
+// Uniform colour - raw channels or RgbColor struct
 session.SetUniformLighting(r: 0, g: 100, b: 255);
 session.SetUniformLighting(new RgbColor(0, 100, 255));
 
@@ -116,9 +116,6 @@ session.DisableLighting();
 // Built-in animation presets (all models)
 session.SetLightingMode(LightingMode.CenterSurfing, brightness: 5, speed: 4);
 session.SetLightingMode(LightingMode.Breath, brightness: 9, speed: 2);
-// Available modes: RotateMarquee, AlwaysLight, Spectrum, Breath, LightByPress, Stars,
-//   WaveSpectrum, CenterSurfing, SurfingDown, Ripple, GlowingFish, ColorfulFountain,
-//   Traffic, GluttonousSnake, RepeatSurfing, SurfingCross, LaserKey, RandomFountain
 ```
 
 ### Firmware animation presets (programmable models)
@@ -150,7 +147,7 @@ session.SetLogoLightOff();
 
 using var session = KeyboardSession<X60Future>.OpenFirst();  // IHasSideLight
 session.SetSideLightPreset(LightPreset.Spectrum);
-session.SetSideLightColor(r: 0, g: 200, b: 255);
+session.SetSideLightColor(new RgbColor(255, 0, 128));
 ```
 
 ### RGB to a JSON file (all models)
@@ -182,11 +179,11 @@ session.DisableTurboMode();
 session.SetLastWinRapidTriggerMode(LastWinRapidTriggerMode.Both);
 session.ConfigureLastWinReplace(enabled: true);
 
-// Last Win key pairs — whichever was pressed most recently wins
+// Last Win key pairs - whichever was pressed most recently wins
 session.ConfigureLastWinPairs((DDKey.A, DDKey.D), (DDKey.Q, DDKey.E));
 session.ConfigureLastWinPairs(new LastWinPair(DDKey.A, DDKey.D), new LastWinPair(DDKey.W, DDKey.S));
 
-// Auto Match — release threshold automatically mirrors the press threshold
+// Auto Match - release threshold automatically mirrors the press threshold
 session.EnableAutoMatch(sensitivity: 1);
 session.DisableAutoMatch();
 ```
@@ -220,7 +217,7 @@ session.SetTickRate(rate: 8);
 ### Key remapping
 
 ```csharp
-// Remap a single key (3-byte write — no read required)
+// Remap a single key (3-byte write - no read required)
 session.SetKey(DDKey.CapsLock, new UserKey { Type = 0x04, Param1 = 0x29 }); // → Esc
 
 // Read / write an entire layer
@@ -246,14 +243,14 @@ session.SwitchProfile(profileIndex: 1);
 int active = session.GetCurrentProfile();
 ```
 
-### Macros, DKS, Multi-Tap, Toggle
+### Macros, Dynamic Keystroke, Multi-Tap, Toggle Keys
 
 ```csharp
-// Dynamic Keystroke — different bindings at different press depths
+// Dynamic Keystroke - different bindings at different press depths
 DynamicKeystrokeEntry[] dks = session.ReadDynamicKeystrokeEntries();
 session.SetDynamicKeystrokeEntry(slotIndex: 0, entry);
 
-// Multi-Tap — different action per tap count
+// Multi-Tap - different action per tap count
 MultiTapEntry[] mt = session.ReadMultiTapEntries();
 session.SetMultiTapEntry(slotIndex: 0, entry);
 
@@ -265,16 +262,16 @@ session.SetMacroSlot(slotIndex: 0, actions);
 
 ## Keyboard profiles
 
-`KeyboardProfile` is a serialisable snapshot. Only non-null fields are applied — set a section to `null` to leave that part of the keyboard unchanged.
+`KeyboardProfile` is a serialisable snapshot. Only non-null fields are applied - set a section to `null` to leave that part of the keyboard unchanged.
 
 ```csharp
 var profile = new KeyboardProfile
 {
+    RapidTrigger = true,
     Actuation    = new KeyDepthProfileBuilder()
                        .Default(2.0f)
                        .Keys([DDKey.W, DDKey.A, DDKey.S, DDKey.D], 0.2f)
                        .Build(),
-    RapidTrigger = true,
     Theme        = new KeyboardThemeBuilder()
                        .Base(0, 100, 255)
                        .Brightness(8)
@@ -283,11 +280,11 @@ var profile = new KeyboardProfile
 
 session.ApplyProfile(profile);
 
-// Snapshot the current keyboard state
+// Save the current keyboard state to JSON
 KeyboardProfile captured = session.CaptureProfile();
 captured.SaveToFile("profile.json");
 
-// Round-trip from JSON
+// load profile back from JSON
 var loaded = KeyboardProfile.FromFile("profile.json");
 session.ApplyProfile(loaded);
 ```
@@ -302,10 +299,10 @@ session.ApplyProfile(loaded);
 
 `session.PrecisionMode` reports the active mode. Actuation read-back and high-precision key-point writes are only available in `HighPrecision` mode.
 
-## Further reading
+## Additional documentation
 
-Additional documentation is available on the [GitHub Wiki](../../wiki):
+See [GitHub Wiki](../../wiki):
 
-- **[Testing](../../wiki/Testing)** — using `FakeKeyboardConnection` to write tests without a physical keyboard
-- **[Protocol Analyzer](../../wiki/ProtocolAnalyzer)** — validating USB captures against the protocol implementation
-- **[Code Generation](../../wiki/CodeGen)** — regenerating `Generated/` from YAML + Scriban templates when adding new models or capabilities
+- **[Testing](../../wiki/Testing)** - using `FakeKeyboardConnection` to write tests without a physical keyboard
+- **[Protocol Analyzer](../../wiki/ProtocolAnalyzer)** - validating USB captures against the protocol implementation
+- **[Code Generation](../../wiki/CodeGen)** - regenerating `Generated/` from YAML + Scriban templates when adding new models or capabilities
