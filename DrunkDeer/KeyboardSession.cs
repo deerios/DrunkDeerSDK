@@ -1237,10 +1237,11 @@ public class KeyboardSession : IDisposable
 	/// </param>
 	/// <param name="brightness">Brightness level 0–9. Default 9.</param>
 	/// <param name="speed">Animation speed 0–9. Default 5.</param>
-	public void SetLightingMode(LightingMode modeCode, [Range(0, 9)] byte brightness = 9, byte speed = 5)
+	public void SetLightingMode(LightingMode modeCode, [Range(0, 9)] byte brightness = 9, [Range(0, 9)] byte speed = 5)
 	{
 		EnsureNotPolling();
 		ValidateBrightness(brightness);
+		ValidateSpeed(speed);
 		var resp = _connection.SendAndReceive(Protocol.SetLightingMode.Build(
 			slot: 0, (byte)modeCode, brightness, speed, tail: 0));
 		if (resp is null || !RgbAcknowledge.Matches(resp))
@@ -1449,6 +1450,9 @@ public class KeyboardSession : IDisposable
 	/// <param name="sensitivity">Firmware sensitivity level (1–254). Lower values are more sensitive. Default: 1.</param>
 	public void EnableAutoMatch([Range(1, 254)] byte sensitivity = 1)
 	{
+		if (sensitivity is < 1 or > 254)
+			throw new ArgumentOutOfRangeException(nameof(sensitivity), sensitivity,
+				"Sensitivity must be 1–254.");
 		EnsureNotPolling();
 		_connection.Send(SetAutoMatchMode.Build(sensitivity));
 	}
@@ -1737,10 +1741,11 @@ public class KeyboardSession : IDisposable
 	/// <param name="effect">Firmware animation preset. <see cref="LightPreset.Custom"/> switches back to per-key RGB.</param>
 	/// <param name="brightness">Brightness 0-9. Default 9.</param>
 	/// <param name="speed">Animation speed 0-9. Default 5.</param>
-	internal void SetLightPreset(LightPreset effect, byte brightness = 9, byte speed = 5)
+	internal void SetLightPreset(LightPreset effect, [Range(0, 9)] byte brightness = 9, [Range(0, 9)] byte speed = 5)
 	{
 		EnsureNotPolling();
 		ValidateBrightness(brightness);
+		ValidateSpeed(speed);
 		var block = FetchFuncBlock();
 		block.LightEffect     = (byte)effect;
 		block.LightBrightness = brightness;
@@ -1785,6 +1790,9 @@ public class KeyboardSession : IDisposable
 	/// </summary>
 	internal void SetTickRate(byte rate)
 	{
+		if (rate > 15)
+			throw new ArgumentOutOfRangeException(nameof(rate), rate,
+				"Tick rate must be 0–15.");
 		EnsureNotPolling();
 		var block = FetchFuncBlock();
 		block.TickRate = rate;
@@ -1799,10 +1807,11 @@ public class KeyboardSession : IDisposable
 	/// <param name="brightness">Brightness 0-9. Default 9.</param>
 	/// <param name="speed">Animation speed 0-9. Default 5.</param>
 	/// <exception cref="NotSupportedException">Thrown when the connected model has no logo LED zone.</exception>
-	internal void SetLogoLightPreset(LightPreset effect, byte brightness = 9, byte speed = 5)
+	internal void SetLogoLightPreset(LightPreset effect, [Range(0, 9)] byte brightness = 9, [Range(0, 9)] byte speed = 5)
 	{
 		EnsureNotPolling();
 		ValidateBrightness(brightness);
+		ValidateSpeed(speed);
 		EnsureHasLogoLight();
 		var block = FetchFuncBlock();
 		block.LogoLightEffect     = (byte)effect;
@@ -1853,10 +1862,11 @@ public class KeyboardSession : IDisposable
 	/// <param name="brightness">Brightness 0-9. Default 9.</param>
 	/// <param name="speed">Animation speed 0-9. Default 5.</param>
 	/// <exception cref="NotSupportedException">Thrown when the connected model has no side LED zone.</exception>
-	internal void SetSideLightPreset(LightPreset effect, byte brightness = 9, byte speed = 5)
+	internal void SetSideLightPreset(LightPreset effect, [Range(0, 9)] byte brightness = 9, [Range(0, 9)] byte speed = 5)
 	{
 		EnsureNotPolling();
 		ValidateBrightness(brightness);
+		ValidateSpeed(speed);
 		EnsureHasSideLight();
 		var block = FetchFuncBlock();
 		block.SideLightEffect     = (byte)effect;
@@ -1964,6 +1974,13 @@ public class KeyboardSession : IDisposable
 		if (brightness > 9)
 			throw new ArgumentOutOfRangeException(nameof(brightness), brightness,
 				"Brightness must be 0–9.");
+	}
+
+	private static void ValidateSpeed(byte speed)
+	{
+		if (speed > 9)
+			throw new ArgumentOutOfRangeException(nameof(speed), speed,
+				"Speed must be 0–9.");
 	}
 
 	private static byte SumBytes(ReadOnlySpan<byte> data)
