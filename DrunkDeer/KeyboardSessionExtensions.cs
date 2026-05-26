@@ -204,6 +204,26 @@ public static class KeyboardSessionExtensions
     public static (byte R, byte G, byte B)[] ReadLiveColors<T>(this KeyboardSession<T> s)
         where T : IHasFuncBlock => s.ReadLiveColors();
 
+    /// <summary>Enters fast-transfer mode, suspending normal key processing on the firmware.</summary>
+    public static void StartFastTransferMode<T>(this KeyboardSession<T> s)
+        where T : IHasFuncBlock => s.StartFastTransferMode();
+
+    /// <summary>Exits fast-transfer mode, resuming normal key processing on the firmware.</summary>
+    public static void StopFastTransferMode<T>(this KeyboardSession<T> s)
+        where T : IHasFuncBlock => s.StopFastTransferMode();
+
+    /// <summary>Signals the keyboard to begin analog sensor calibration.</summary>
+    public static void StartCalibration<T>(this KeyboardSession<T> s)
+        where T : IHasFuncBlock => s.StartCalibration();
+
+    /// <summary>Signals the keyboard to end analog sensor calibration.</summary>
+    public static void EndCalibration<T>(this KeyboardSession<T> s)
+        where T : IHasFuncBlock => s.EndCalibration();
+
+    /// <summary>Performs a soft reset (firmware reboot) of the keyboard without clearing settings.</summary>
+    public static void Reset<T>(this KeyboardSession<T> s)
+        where T : IHasFuncBlock => s.Reset();
+
     // ── IHasBerserkMode ──────────────────────────────────────────────────────
 
     /// <summary>

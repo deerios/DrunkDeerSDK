@@ -2504,7 +2504,7 @@ public class KeyboardSession : IDisposable
 	/// Call <see cref="StopFastTransferMode"/> after bulk write operations complete.
 	/// Wire format: JS <c>startFastModel()</c> - defined but not called in the official app.
 	/// </summary>
-	public void StartFastTransferMode()
+	internal void StartFastTransferMode()
 	{
 		EnsureNotPolling();
 		_connection.Send([0x55, 0x01]);
@@ -2515,7 +2515,7 @@ public class KeyboardSession : IDisposable
 	/// Exits fast-transfer mode, resuming normal key processing on the firmware.
 	/// Must be preceded by <see cref="StartFastTransferMode"/>. No-op if fast transfer mode is not active.
 	/// </summary>
-	public void StopFastTransferMode()
+	internal void StopFastTransferMode()
 	{
 		EnsureNotPolling();
 		if (!_inFastMode)
@@ -2533,7 +2533,7 @@ public class KeyboardSession : IDisposable
 	/// Call <see cref="EndCalibration"/> when calibration is complete.
 	/// The keyboard must not be polled during calibration.
 	/// </summary>
-	public void StartCalibration()
+	internal void StartCalibration()
 	{
 		EnsureNotPolling();
 		_connection.Send([0x55, 0xA8]);
@@ -2543,7 +2543,7 @@ public class KeyboardSession : IDisposable
 	/// Signals the keyboard to end analog sensor calibration.
 	/// Must be preceded by <see cref="StartCalibration"/>.
 	/// </summary>
-	public void EndCalibration()
+	internal void EndCalibration()
 	{
 		EnsureNotPolling();
 		_connection.Send([0x55, 0xA9]);
@@ -2565,7 +2565,7 @@ public class KeyboardSession : IDisposable
 	/// The USB connection will briefly drop and reappear; dispose this session and
 	/// reconnect with <see cref="OpenFirst"/> after calling this method.
 	/// </summary>
-	public void Reset()
+	internal void Reset()
 	{
 		EnsureNotPolling();
 		// Byte layout matches JS: sendDeviceData(85, [238, 0, 0, 1, 0, 0, 0, 255])
