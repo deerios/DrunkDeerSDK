@@ -257,7 +257,7 @@ int ListInterfaces()
         else
         {
             Console.WriteLine("No interfaces with 'usb' in name/description found.");
-            Console.WriteLine("All available interfaces are listed below — pick the one that corresponds to USBPcap.");
+            Console.WriteLine("All available interfaces are listed below - pick the one that corresponds to USBPcap.");
         }
 
         if (other.Count > 0)
@@ -282,7 +282,7 @@ int ListInterfaces()
 void PrintUsage()
 {
     Console.WriteLine("""
-        DrunkDeer.ProtocolAnalyzer  —  validate USB traffic against the protocol
+        DrunkDeer.ProtocolAnalyzer  -  validate USB traffic against the protocol
 
         Usage:
           ProtocolAnalyzer --pcap <capture.pcap|.pcapng> [options]   # analyze a Wireshark capture

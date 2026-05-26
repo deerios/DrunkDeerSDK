@@ -1,4 +1,4 @@
-using Serilog;
+﻿using Serilog;
 using System.Buffers.Binary;
 using System.Diagnostics;
 
@@ -75,7 +75,7 @@ public enum LastWinRapidTriggerMode : byte
 /// Ripple, Always Light, Light by Press, Serpentine to the Centre, Laser Key,
 /// Glowing Fish, Surfing Cross, Heart, Traffic, Gluttonous Snake, Raindrops, Stars,
 /// Surfing Down, Repeat Surfing, Random Fountain, Dance of Demons.
-/// Modes "Turbo mode light" and "Custom light" require per-key colour data —
+/// Modes "Turbo mode light" and "Custom light" require per-key colour data -
 /// use <see cref="KeyboardSession.SetLighting"/> for those instead.
 /// </remarks>
 public static class LightingMode
@@ -506,26 +506,9 @@ public sealed class KeyboardSession : IDisposable
 				short prev = _heights[key];
 				if (h == prev) continue;
 
-				_heights[key] = h;
 				_log.Verbose("Height[{I:000}] {Prev} -> {H}  (press={Ps} thresh={PT}/{RT})",
 					key, prev, h, _pressed[key], pressRaw, releaseRaw);
-
-				KeyHeightChanged?.Invoke(this, new KeyHeightChangedEventArgs(key, prev, h));
-
-				if (!_pressed[key] && h >= pressRaw)
-				{
-					_pressed[key] = true;
-					_log.Debug("KeyDown  idx={I:000} h={H}", key, h);
-					KeyDown?.Invoke(this, new KeyEventArgs(key, h));
-				}
-				else if (_pressed[key] && h < releaseRaw)
-				{
-					_pressed[key] = false;
-					_log.Debug("KeyUp    idx={I:000} h={H}", key, h);
-					var args = new KeyEventArgs(key, h);
-					KeyUp?.Invoke(this, args);
-					KeyPressed?.Invoke(this, args);
-				}
+				UpdateKeyState(key, prev, h, pressRaw, releaseRaw);
 			}
 		}
 
@@ -535,8 +518,8 @@ public sealed class KeyboardSession : IDisposable
 	private void DispatchFrameHighPrecision(byte[][] packets, TimeSpan elapsed)
 	{
 		// 1 HP unit = 0.005 mm, so mm × 200 = raw
-		int pressRaw = (int)Math.Round(PressThresholdMm   * 200);
-		int releaseRaw = (int)Math.Round(ReleaseThresholdMm * 200);
+		int pressRaw   = (int)Math.Round(PressThresholdMm   * HeightScale);
+		int releaseRaw = (int)Math.Round(ReleaseThresholdMm * HeightScale);
 
 		for (int section = 0; section < 5; section++)
 		{
@@ -552,28 +535,32 @@ public sealed class KeyboardSession : IDisposable
 				short prev = _heights[key];
 				if (h == prev) continue;
 
-				_heights[key] = h;
-
-				KeyHeightChanged?.Invoke(this, new KeyHeightChangedEventArgs(key, prev, h));
-
-				if (!_pressed[key] && h >= pressRaw)
-				{
-					_pressed[key] = true;
-					_log.Debug("KeyDown  idx={I:000} h={H}", key, h);
-					KeyDown?.Invoke(this, new KeyEventArgs(key, h));
-				}
-				else if (_pressed[key] && h < releaseRaw)
-				{
-					_pressed[key] = false;
-					_log.Debug("KeyUp    idx={I:000} h={H}", key, h);
-					var args = new KeyEventArgs(key, h);
-					KeyUp?.Invoke(this, args);
-					KeyPressed?.Invoke(this, args);
-				}
+				UpdateKeyState(key, prev, h, pressRaw, releaseRaw);
 			}
 		}
 
 		Polled?.Invoke(this, new PolledEventArgs(elapsed));
+	}
+
+	private void UpdateKeyState(int key, short prev, short h, int pressRaw, int releaseRaw)
+	{
+		_heights[key] = h;
+		KeyHeightChanged?.Invoke(this, new KeyHeightChangedEventArgs(key, prev, h));
+
+		if (!_pressed[key] && h >= pressRaw)
+		{
+			_pressed[key] = true;
+			_log.Debug("KeyDown  idx={I:000} h={H}", key, h);
+			KeyDown?.Invoke(this, new KeyEventArgs(key, h));
+		}
+		else if (_pressed[key] && h < releaseRaw)
+		{
+			_pressed[key] = false;
+			_log.Debug("KeyUp    idx={I:000} h={H}", key, h);
+			var args = new KeyEventArgs(key, h);
+			KeyUp?.Invoke(this, args);
+			KeyPressed?.Invoke(this, args);
+		}
 	}
 
 	private static bool AllReceived(bool[] flags)
@@ -913,7 +900,7 @@ public sealed class KeyboardSession : IDisposable
 		var raw = ReadKeyPointRawHighPrecision(request, matches, getSection, getValues);
 		var mm = new float[HpKeyCount];
 		for (int i = 0; i < HpKeyCount; i++)
-			mm[i] = raw[i] / 200f;
+			mm[i] = raw[i] / HeightScale;
 		return mm;
 	}
 
@@ -1966,13 +1953,26 @@ public sealed class KeyboardSession : IDisposable
 	private static ushort KeyMapAddr(int profileIndex, int layerIndex, int keyIndex = 0) =>
 		(ushort)(KeyMapProfileStride * profileIndex + KeyMapLayerStride * layerIndex + 3 * keyIndex);
 
-	private static UserKey[] DecodeKeyMap(byte[] raw)
+	private static UserKey[] DecodeUserKeyArray(byte[] raw, int count)
 	{
-		var result = new UserKey[KeyMapKeyCount];
-		for (int i = 0; i < KeyMapKeyCount; i++)
+		var result = new UserKey[count];
+		for (int i = 0; i < count; i++)
 			result[i] = new UserKey { Type = raw[i * 3], Param1 = raw[i * 3 + 1], Param2 = raw[i * 3 + 2] };
 		return result;
 	}
+
+	private static void EncodeUserKeyArray(UserKey[] keys, byte[] dest, int count)
+	{
+		for (int i = 0; i < count; i++)
+		{
+			dest[i * 3]     = keys[i].Type;
+			dest[i * 3 + 1] = keys[i].Param1;
+			dest[i * 3 + 2] = keys[i].Param2;
+		}
+	}
+
+	private static UserKey[] DecodeKeyMap(byte[] raw) =>
+		DecodeUserKeyArray(raw, KeyMapKeyCount);
 
 	private static void ValidateLayer(int layerIndex)
 	{
@@ -2023,12 +2023,7 @@ public sealed class KeyboardSession : IDisposable
 			throw new ArgumentException(
 				$"Expected {KeyMapKeyCount} key entries, got {keys.Length}.", nameof(keys));
 		var raw = new byte[KeyMapKeyCount * 3];
-		for (int i = 0; i < KeyMapKeyCount; i++)
-		{
-			raw[i * 3]     = keys[i].Type;
-			raw[i * 3 + 1] = keys[i].Param1;
-			raw[i * 3 + 2] = keys[i].Param2;
-		}
+		EncodeUserKeyArray(keys, raw, KeyMapKeyCount);
 		WriteExtendedGateway(0x09, KeyMapAddr(profileIndex, layerIndex), raw);
 	}
 
@@ -2174,10 +2169,7 @@ public sealed class KeyboardSession : IDisposable
 		EnsureNotPolling();
 		var raw = ReadExtendedGateway(0xA6, (ushort)(TglStride * profileIndex),
 			TglSlotCount * TglSlotSize);
-		var result = new UserKey[TglSlotCount];
-		for (int i = 0; i < TglSlotCount; i++)
-			result[i] = new UserKey { Type = raw[i * 3], Param1 = raw[i * 3 + 1], Param2 = raw[i * 3 + 2] };
-		return result;
+		return DecodeUserKeyArray(raw, TglSlotCount);
 	}
 
 	/// <summary>Writes all 32 Toggle slot configurations for the specified profile.</summary>
@@ -2190,12 +2182,7 @@ public sealed class KeyboardSession : IDisposable
 			throw new ArgumentException(
 				$"Expected {TglSlotCount} Toggle entries, got {entries.Length}.", nameof(entries));
 		var raw = new byte[TglSlotCount * TglSlotSize];
-		for (int i = 0; i < TglSlotCount; i++)
-		{
-			raw[i * 3]     = entries[i].Type;
-			raw[i * 3 + 1] = entries[i].Param1;
-			raw[i * 3 + 2] = entries[i].Param2;
-		}
+		EncodeUserKeyArray(entries, raw, TglSlotCount);
 		WriteExtendedGateway(0xA7, (ushort)(TglStride * profileIndex), raw);
 	}
 
@@ -2322,8 +2309,8 @@ public sealed class KeyboardSession : IDisposable
 		var triggers = ReadKeyTriggers(profileIndex);
 
 		var layers = new UserKey[KeyMapLayerCount][];
-		for (int l = 0; l < KeyMapLayerCount; l++)
-			layers[l] = ReadKeyMap(l, profileIndex);
+		for (int layer = 0; layer < KeyMapLayerCount; layer++)
+			layers[layer] = ReadKeyMap(layer, profileIndex);
 
 		var dks = ReadDynamicKeystrokeEntries(profileIndex);
 		var mt = ReadMultiTapEntries(profileIndex);
@@ -2360,10 +2347,10 @@ public sealed class KeyboardSession : IDisposable
 
 		if (data.KeyMapLayers != null)
 		{
-			for (int l = 0; l < KeyMapLayerCount; l++)
+			for (int layer = 0; layer < KeyMapLayerCount; layer++)
 			{
-				if (data.KeyMapLayers.Length > l && data.KeyMapLayers[l] != null)
-					WriteKeyMap(data.KeyMapLayers[l]!, l, profileIndex);
+				if (data.KeyMapLayers.Length > layer && data.KeyMapLayers[layer] != null)
+					WriteKeyMap(data.KeyMapLayers[layer]!, layer, profileIndex);
 			}
 		}
 
@@ -2398,8 +2385,8 @@ public sealed class KeyboardSession : IDisposable
 
 		KeyboardFuncBlock? funcBlock = HasFuncBlock ? FetchFuncBlock(profileIndex) : null;
 
-		float? uAct = null, uDs = null, uUs = null;
-		Dictionary<string, float>? perKeyAct = null, perKeyDs = null, perKeyUs = null;
+		float? uniformActuationMm = null, uniformDownstrokeMm = null, uniformUpstrokeMm = null;
+		Dictionary<string, float>? perKeyActuationMm = null, perKeyDownstrokeMm = null, perKeyUpstrokeMm = null;
 
 		if (HasFuncBlock)
 		{
@@ -2437,16 +2424,16 @@ public sealed class KeyboardSession : IDisposable
 				return result;
 			}
 
-			bool uniformAct = IsUniform(actuations, out float _uAct);
-			bool uniformDs  = IsUniform(downstrokes, out float _uDs);
-			bool uniformUs  = IsUniform(upstrokes,   out float _uUs);
+			bool uniformAct = IsUniform(actuations,  out float uActMm);
+			bool uniformDs  = IsUniform(downstrokes, out float uDsMm);
+			bool uniformUs  = IsUniform(upstrokes,   out float uUsMm);
 
-			uAct      = uniformAct ? _uAct : null;
-			perKeyAct = uniformAct ? null  : BuildPerKeyMap(actuations);
-			uDs       = uniformDs  ? _uDs  : null;
-			perKeyDs  = uniformDs  ? null  : BuildPerKeyMap(downstrokes);
-			uUs       = uniformUs  ? _uUs  : null;
-			perKeyUs  = uniformUs  ? null  : BuildPerKeyMap(upstrokes);
+			uniformActuationMm  = uniformAct ? uActMm : null;
+			perKeyActuationMm   = uniformAct ? null : BuildPerKeyMap(actuations);
+			uniformDownstrokeMm = uniformDs  ? uDsMm : null;
+			perKeyDownstrokeMm  = uniformDs  ? null : BuildPerKeyMap(downstrokes);
+			uniformUpstrokeMm   = uniformUs  ? uUsMm : null;
+			perKeyUpstrokeMm    = uniformUs  ? null : BuildPerKeyMap(upstrokes);
 		}
 
 		KeyboardTheme? theme = null;
@@ -2463,12 +2450,12 @@ public sealed class KeyboardSession : IDisposable
 
 		return new KeyboardProfile
 		{
-			ActuationMm           = uAct,
-			PerKeyActuationMm     = perKeyAct,
-			DownstrokeMm          = uDs,
-			PerKeyDownstrokeMm    = perKeyDs,
-			UpstrokeMm            = uUs,
-			PerKeyUpstrokeMm      = perKeyUs,
+			ActuationMm           = uniformActuationMm,
+			PerKeyActuationMm     = perKeyActuationMm,
+			DownstrokeMm          = uniformDownstrokeMm,
+			PerKeyDownstrokeMm    = perKeyDownstrokeMm,
+			UpstrokeMm            = uniformUpstrokeMm,
+			PerKeyUpstrokeMm      = perKeyUpstrokeMm,
 			RapidTrigger          = _rapidTriggerEnabled,
 			RapidTriggerAutoMatch = _rapidTriggerAutoMatch,
 			TurboMode             = _turboEnabled,
@@ -2522,9 +2509,7 @@ public sealed class KeyboardSession : IDisposable
 	public void StartFastTransferMode()
 	{
 		EnsureNotPolling();
-		var pkt = new byte[64];
-		pkt[0] = 0x55; pkt[1] = 0x01;
-		_connection.Send(pkt);
+		_connection.Send([0x55, 0x01]);
 		_inFastMode = true;
 	}
 
@@ -2537,12 +2522,11 @@ public sealed class KeyboardSession : IDisposable
 		EnsureNotPolling();
 		if (!_inFastMode)
 		{
-			_log.Warning($"{nameof(StopFastTransferMode)} called without a preceding {nameof(StartFastTransferMode)} - nothing sent");
+			_log.Warning("{Method} called without a preceding {Prereq}; nothing sent",
+			nameof(StopFastTransferMode), nameof(StartFastTransferMode));
 			return;
 		}
-		var pkt = new byte[64];
-		pkt[0] = 0x55; pkt[1] = 0x02;
-		_connection.Send(pkt);
+		_connection.Send([0x55, 0x02]);
 		_inFastMode = false;
 	}
 
@@ -2554,9 +2538,7 @@ public sealed class KeyboardSession : IDisposable
 	public void StartCalibration()
 	{
 		EnsureNotPolling();
-		var pkt = new byte[64];
-		pkt[0] = 0x55; pkt[1] = 0xA8;
-		_connection.Send(pkt);
+		_connection.Send([0x55, 0xA8]);
 	}
 
 	/// <summary>
@@ -2566,9 +2548,7 @@ public sealed class KeyboardSession : IDisposable
 	public void EndCalibration()
 	{
 		EnsureNotPolling();
-		var pkt = new byte[64];
-		pkt[0] = 0x55; pkt[1] = 0xA9;
-		_connection.Send(pkt);
+		_connection.Send([0x55, 0xA9]);
 	}
 
 	/// <summary>
@@ -2579,9 +2559,7 @@ public sealed class KeyboardSession : IDisposable
 	public void RestoreFactorySettings()
 	{
 		EnsureNotPolling();
-		var pkt = new byte[64];
-		pkt[0] = 0x06; pkt[1] = 0x0F; pkt[2] = 0xFF;
-		_connection.Send(pkt);
+		_connection.Send([0x06, 0x0F, 0xFF]);
 	}
 
 	/// <summary>
@@ -2592,11 +2570,8 @@ public sealed class KeyboardSession : IDisposable
 	public void Reset()
 	{
 		EnsureNotPolling();
-		var pkt = new byte[64];
-		pkt[0] = 0x55; pkt[1] = 0xEE;
 		// Byte layout matches JS: sendDeviceData(85, [238, 0, 0, 1, 0, 0, 0, 255])
-		pkt[4] = 0x01; pkt[8] = 0xFF;
-		_connection.Send(pkt);
+		_connection.Send([0x55, 0xEE, 0, 0, 1, 0, 0, 0, 0xFF]);
 	}
 
 	public void Dispose()
@@ -2611,9 +2586,7 @@ public sealed class KeyboardSession : IDisposable
 		{
 			try
 			{
-				var pkt = new byte[64];
-				pkt[0] = 0x55; pkt[1] = 0x02;
-				_connection.Send(pkt);
+				_connection.Send([0x55, 0x02]);
 				_inFastMode = false;
 			}
 			catch (Exception ex) { _log.Warning(ex, "Dispose: EndFastMode send failed (keyboard may be disconnected)."); }

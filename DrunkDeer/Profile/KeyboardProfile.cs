@@ -5,7 +5,7 @@ namespace DrunkDeer.Protocol;
 
 /// <summary>
 /// A portable, serialisable snapshot of keyboard configuration settings.
-/// Any property left <see langword="null"/> is ignored when the profile is applied —
+/// Any property left <see langword="null"/> is ignored when the profile is applied;
 /// only non-null fields are written to the keyboard.
 /// </summary>
 /// <remarks>

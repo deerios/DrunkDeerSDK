@@ -18,7 +18,7 @@ public static class LiveUsbCapture
 
     /// <param name="IsUsbPcap">
     /// Heuristic guess based on name/description containing "usb", or explicitly probed as a
-    /// <c>\\.\USBPcapN</c> path. Use as a display hint only — any device name can be passed
+    /// <c>\\.\USBPcapN</c> path. Use as a display hint only; any device name can be passed
     /// to <see cref="Capture"/>.
     /// </param>
     public sealed record DeviceInfo(string Name, string Description, bool IsUsbPcap);

@@ -112,10 +112,10 @@ public sealed class DynamicKeystrokeEntry
 
 	internal static void Encode(DynamicKeystrokeEntry entry, Span<byte> data)
 	{
-		data[0] = entry.Points.Length > 0 ? entry.Points[0] : (byte)10;
-		data[1] = entry.Points.Length > 1 ? entry.Points[1] : (byte)30;
-		data[2] = entry.Points.Length > 2 ? entry.Points[2] : (byte)30;
-		data[3] = entry.Points.Length > 3 ? entry.Points[3] : (byte)10;
+		data[0] = entry.Points[0];
+		data[1] = entry.Points[1];
+		data[2] = entry.Points[2];
+		data[3] = entry.Points[3];
 		for (int k = 0; k < 4; k++)
 		{
 			int b = 5 * k + 4;

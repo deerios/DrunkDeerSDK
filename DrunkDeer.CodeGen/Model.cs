@@ -165,7 +165,7 @@ internal sealed class ProfileBlockFieldDef
 	public string Name { get; set; } = "";
 	public int Byte { get; set; }
 
-	// Single-bit shorthand — sets both BitLo and BitHi to the same value.
+	// Single-bit shorthand; sets both BitLo and BitHi to the same value.
 	public int? Bit { get; set; }
 
 	// Explicit bit range (inclusive). Null = full byte (0..7).

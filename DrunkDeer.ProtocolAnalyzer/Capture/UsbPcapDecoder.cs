@@ -42,7 +42,7 @@ public static class UsbPcapDecoder
                                                   : PacketDirection.HostToDevice;
 
         // DrunkDeer vendor HID reports are 64 bytes on the wire (report ID + 63 protocol bytes).
-        // Shorter packets are standard HID keyboard/mouse reports — not protocol traffic.
+        // Shorter packets are standard HID keyboard/mouse reports; not protocol traffic.
         if (dataLen < 64) return null;
 
         var raw = data.AsSpan((int)headerLen, (int)dataLen);

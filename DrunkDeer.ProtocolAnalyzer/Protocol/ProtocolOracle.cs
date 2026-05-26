@@ -76,7 +76,7 @@ public static class ProtocolOracle
 
     static (string name, string? respName, byte? respByte) MatchOut(byte[] b) => b[0] switch
     {
-        // Identity & key remap both start with 0xA0 0x02 — distinguish by byte[2]
+        // Identity & key remap both start with 0xA0 0x02 - distinguish by byte[2]
         0xA0 when b.Length > 2 && b[2] == 0x04 => ("KeyRemapPacket",     "KeyRemapAck",          0xA0),
         0xA0                                    => ("IdentityRequest",    "IdentityResponse",      0xA0),
 
@@ -137,7 +137,7 @@ public static class ProtocolOracle
         var fail   = new List<string>();
         var fields = new List<ExtractedField>();
 
-        // IdentityResponse: 0xA0 0x02 0x00 — richest field set, most firmware-sensitive
+        // IdentityResponse: 0xA0 0x02 0x00 - richest field set, most firmware-sensitive
         if (IdentityResponse.Matches(b))
         {
             if (b.Length < 33) { fail.Add($"Too short for IdentityResponse: {b.Length} < 33"); return ("IdentityResponse", false, fail, fields); }
@@ -153,7 +153,7 @@ public static class ProtocolOracle
             return ("IdentityResponse", true, fail, fields);
         }
 
-        // TravelResponse: 0xB7 — unsolicited key-height data
+        // TravelResponse: 0xB7 - unsolicited key-height data
         if (TravelResponse.Matches(b))
         {
             if (b.Length < 4) { fail.Add($"Too short for TravelResponse: {b.Length} < 4"); return ("TravelResponse", false, fail, fields); }
@@ -171,7 +171,7 @@ public static class ProtocolOracle
         if (CommonConfigAcknowledge.Matches(b))
             return ("CommonConfigAcknowledge", true, NoFailures, NoFields);
 
-        // ExtendedGatewayResponse: 0xAA — gateway read data or write ack
+        // ExtendedGatewayResponse: 0xAA - gateway read data or write ack
         if (ExtendedGatewayResponse.Matches(b))
         {
             if (b.Length >= 64)
