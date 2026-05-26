@@ -21,7 +21,7 @@ Log.Information("Log file: {Path}", Path.GetFullPath(logFile));
 try
 {
 	Log.Information("Opening keyboard…");
-	using var session = KeyboardSession.OpenFirst();
+	using var session = KeyboardSession<A75>.OpenFirst();
 	Log.Information("Connected: {Name} ({Variant}), fw {Fw}",
 		session.Model.Name, session.Variant, session.FirmwareVersion);
 
@@ -34,16 +34,6 @@ try
 
 	session.Polled += (_, e) =>
 		Log.Verbose("[Polled] {Hz} Hz  ({ElapsedMs:F2} ms)", e.Hz, e.Elapsed.TotalMilliseconds);
-
-	//var profile = session.CaptureProfile();
-	//Log.Information(JsonConvert.SerializeObject(profile));
-
-	//session.SetKeyColor(DDKey.B, 0, 255, 0, 3);
-	session.SetLightPreset(effect: 3, brightness: 7, speed: 4);
-
-	//Log.Information(JsonConvert.SerializeObject(session.HasFuncBlock));
-	//Log.Information(JsonConvert.SerializeObject(session.ReadLiveColors()));
-	;
 
 	session.StartPolling();
 

@@ -114,3 +114,18 @@ public static class ModelRegistry
     public static ModelInfo? GetInfo(string slug)
         => InfoBySlug.TryGetValue(slug, out var info) ? info : null;
 }
+
+// ── Model marker types ──────────────────────────────────────────────────────
+// Compile-time phantom types used as the TModel type argument of
+// KeyboardSession<TModel>. Each class implements only the capability interfaces
+// its hardware actually supports, so intellisense gates methods accordingly.
+
+{{- for m in models }}
+{{- if m.interfaces_list != "" }}
+/// <summary>Model marker type for {{ m.name }}. Implements: {{ m.interfaces_list }}.</summary>
+public sealed class {{ m.const_name }} : {{ m.interfaces_list }} { }
+{{- else }}
+/// <summary>Model marker type for {{ m.name }}.</summary>
+public sealed class {{ m.const_name }} { }
+{{- end }}
+{{- end }}

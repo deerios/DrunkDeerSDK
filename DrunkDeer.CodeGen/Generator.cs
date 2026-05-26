@@ -236,6 +236,17 @@ internal static class Generator
 			return o;
 		}).ToList();
 
+		// Capability marker interfaces for compile-time API gating.
+		var interfaces = new List<string>();
+		if (m.Capabilities.Contains("high_precision")) interfaces.Add("IHasHighPrecision");
+		if (m.Capabilities.Contains("berserk_mode"))   interfaces.Add("IHasBerserkMode");
+		if (m.Capabilities.Contains("logo_light"))     interfaces.Add("IHasLogoLight");
+		if (m.Capabilities.Contains("side_light"))     interfaces.Add("IHasSideLight");
+		// kun_precision without any other FuncBlock-implying capability needs explicit IHasFuncBlock.
+		bool hasFuncBlock = m.Capabilities.Contains("kun_precision") || m.Capabilities.Contains("high_precision");
+		if (hasFuncBlock && interfaces.Count == 0) interfaces.Add("IHasFuncBlock");
+		string interfacesExpr = interfaces.Count > 0 ? string.Join(", ", interfaces) : "";
+
 		return new ScriptObject
 		{
 			["slug"]              = m.Slug,
@@ -249,6 +260,7 @@ internal static class Generator
 			["kun_min_firmware"]  = kunMinFirmwareExpr,
 			["kun_max_depth_mm"]  = $"{kunMaxDepth}f",
 			["identities"]        = identities,
+			["interfaces_list"]   = interfacesExpr,
 		};
 	}
 

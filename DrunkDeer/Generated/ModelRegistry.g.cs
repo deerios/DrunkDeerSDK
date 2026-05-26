@@ -321,3 +321,40 @@ public static class ModelRegistry
     public static ModelInfo? GetInfo(string slug)
         => InfoBySlug.TryGetValue(slug, out var info) ? info : null;
 }
+
+// ── Model marker types ──────────────────────────────────────────────────────
+// Compile-time phantom types used as the TModel type argument of
+// KeyboardSession<TModel>. Each class implements only the capability interfaces
+// its hardware actually supports, so intellisense gates methods accordingly.
+/// <summary>Model marker type for A75.</summary>
+public sealed class A75 { }
+/// <summary>Model marker type for A75 Pro.</summary>
+public sealed class A75Pro { }
+/// <summary>Model marker type for A75 Ultra. Implements: IHasHighPrecision, IHasBerserkMode, IHasLogoLight.</summary>
+public sealed class A75Ultra : IHasHighPrecision, IHasBerserkMode, IHasLogoLight { }
+/// <summary>Model marker type for A75 Master. Implements: IHasHighPrecision, IHasBerserkMode.</summary>
+public sealed class A75Master : IHasHighPrecision, IHasBerserkMode { }
+/// <summary>Model marker type for G75.</summary>
+public sealed class G75 { }
+/// <summary>Model marker type for G75 JP.</summary>
+public sealed class G75Jp { }
+/// <summary>Model marker type for G65.</summary>
+public sealed class G65 { }
+/// <summary>Model marker type for G65 Lite.</summary>
+public sealed class G65Lite { }
+/// <summary>Model marker type for G65 m1. Implements: IHasBerserkMode.</summary>
+public sealed class G65M1 : IHasBerserkMode { }
+/// <summary>Model marker type for G65 m2. Implements: IHasBerserkMode.</summary>
+public sealed class G65M2 : IHasBerserkMode { }
+/// <summary>Model marker type for G65 m3. Implements: IHasBerserkMode.</summary>
+public sealed class G65M3 : IHasBerserkMode { }
+/// <summary>Model marker type for G60.</summary>
+public sealed class G60 { }
+/// <summary>Model marker type for G60 v600. Implements: IHasBerserkMode.</summary>
+public sealed class G60V600 : IHasBerserkMode { }
+/// <summary>Model marker type for Unknown-601. Implements: IHasBerserkMode.</summary>
+public sealed class Unk601 : IHasBerserkMode { }
+/// <summary>Model marker type for Unknown-602. Implements: IHasBerserkMode.</summary>
+public sealed class Unk602 : IHasBerserkMode { }
+/// <summary>Model marker type for X60 Future. Implements: IHasHighPrecision, IHasBerserkMode, IHasSideLight.</summary>
+public sealed class X60Future : IHasHighPrecision, IHasBerserkMode, IHasSideLight { }

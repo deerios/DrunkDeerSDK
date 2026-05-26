@@ -92,7 +92,7 @@ public static class LightingMode
 /// poll loop and raises typed events for key travel changes, presses, and releases.
 /// Also exposes configuration methods for actuation points, lighting, and global options.
 /// </summary>
-public sealed class KeyboardSession : IDisposable
+public class KeyboardSession : IDisposable
 {
 	private static readonly ILogger _log = Log.ForContext<KeyboardSession>();
 
@@ -190,11 +190,9 @@ public sealed class KeyboardSession : IDisposable
 	/// </summary>
 	public bool IsHighPrecision => _precisionMode == PrecisionMode.FD;
 
-	/// <summary><see langword="true"/> if the connected keyboard has a dedicated logo LED zone.</summary>
-	public bool HasLogoLight => (Model.Capabilities & Capabilities.LogoLight) != 0;
+	internal bool HasLogoLight => (Model.Capabilities & Capabilities.LogoLight) != 0;
 
-	/// <summary><see langword="true"/> if the connected keyboard has a dedicated side LED zone.</summary>
-	public bool HasSideLight => (Model.Capabilities & Capabilities.SideLight) != 0;
+	internal bool HasSideLight => (Model.Capabilities & Capabilities.SideLight) != 0;
 
 	/// <summary>
 	/// <see langword="true"/> if the connected keyboard supports Berserk (Turbo) mode.
@@ -203,7 +201,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Standard-precision models with firmware-gated Kun do not expose Berserk mode
 	/// because old firmware does not respond to the FuncBlock gateway (0x55/0x05).
 	/// </summary>
-	public bool HasBerserkMode => (Model.Capabilities & Capabilities.BerserkMode) != 0;
+	internal bool HasBerserkMode => (Model.Capabilities & Capabilities.BerserkMode) != 0;
 
 	/// <summary>
 	/// <see langword="true"/> when the FuncBlock gateway (0x55/0x05 read, 0x06 write) is
@@ -211,7 +209,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <see cref="PrecisionMode.Kun"/> or <see cref="PrecisionMode.FD"/>. Standard-precision
 	/// models running below their Kun firmware threshold do not respond to these sub-commands.
 	/// </summary>
-	public bool HasFuncBlock => _precisionMode != PrecisionMode.Standard;
+	internal bool HasFuncBlock => _precisionMode != PrecisionMode.Standard;
 
 	/// <summary>
 	/// Raised when the background poll loop detects that the keyboard has been disconnected.
@@ -1518,7 +1516,7 @@ public sealed class KeyboardSession : IDisposable
 	}
 
 	/// <summary>Switches the keyboard between Windows and Mac compatibility modes.</summary>
-	public void SetKeyboardMode(KeyboardMode mode)
+	internal void SetKeyboardMode(KeyboardMode mode)
 	{
 		EnsureNotPolling();
 		var block = FetchFuncBlock();
@@ -1530,7 +1528,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Sets the USB polling rate. Higher rates reduce input latency at the cost of
 	/// marginally more host CPU time.
 	/// </summary>
-	public void SetReportRate(ReportRate rate)
+	internal void SetReportRate(ReportRate rate)
 	{
 		EnsureNotPolling();
 		var block = FetchFuncBlock();
@@ -1543,7 +1541,7 @@ public sealed class KeyboardSession : IDisposable
 	/// a key event is registered, reducing chatter from worn or noisy switches.
 	/// 0 = no added debounce.
 	/// </summary>
-	public void SetDebounce(byte level)
+	internal void SetDebounce(byte level)
 	{
 		if (level > 7)
 			throw new ArgumentOutOfRangeException(nameof(level), "Debounce level must be 0-7.");
@@ -1557,7 +1555,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Sets the contact stability mode level (0-3). Higher values increase stabilisation
 	/// for rattling or bouncy switches. 0 = off.
 	/// </summary>
-	public void SetStabilityMode(byte level)
+	internal void SetStabilityMode(byte level)
 	{
 		if (level > 3)
 			throw new ArgumentOutOfRangeException(nameof(level), "Stability mode must be 0-3.");
@@ -1571,7 +1569,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Enables Berserk mode: every key re-fires at the polling rate for as long as it is
 	/// held (auto-fire). Mutually exclusive with keystroke tracking.
 	/// </summary>
-	public void EnableBerserkMode()
+	internal void EnableBerserkMode()
 	{
 		EnsureNotPolling();
 		EnsureHasBerserkMode();
@@ -1581,7 +1579,7 @@ public sealed class KeyboardSession : IDisposable
 	}
 
 	/// <summary>Disables Berserk mode.</summary>
-	public void DisableBerserkMode()
+	internal void DisableBerserkMode()
 	{
 		EnsureNotPolling();
 		EnsureHasBerserkMode();
@@ -1606,7 +1604,7 @@ public sealed class KeyboardSession : IDisposable
 	/// session.ConfigureKeyLocks(winLock: false, altTabLock: false, altF4Lock: false);
 	/// </code>
 	/// </example>
-	public void ConfigureKeyLocks(bool? winLock = null, bool? altTabLock = null, bool? altF4Lock = null)
+	internal void ConfigureKeyLocks(bool? winLock = null, bool? altTabLock = null, bool? altF4Lock = null)
 	{
 		EnsureNotPolling();
 		var block = FetchFuncBlock();
@@ -1627,7 +1625,7 @@ public sealed class KeyboardSession : IDisposable
 	/// </param>
 	/// <param name="brightness">Brightness 0-9. Default 9.</param>
 	/// <param name="speed">Animation speed 0-9. Default 5.</param>
-	public void SetLightPreset(byte effect, byte brightness = 9, byte speed = 5)
+	internal void SetLightPreset(byte effect, byte brightness = 9, byte speed = 5)
 	{
 		EnsureNotPolling();
 		var block = FetchFuncBlock();
@@ -1641,7 +1639,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Switches lighting back to custom RGB mode so colours set via
 	/// <see cref="SetLighting"/> or <see cref="SetKeyColor"/> take effect.
 	/// </summary>
-	public void SetLightCustom()
+	internal void SetLightCustom()
 	{
 		EnsureNotPolling();
 		var block = FetchFuncBlock();
@@ -1654,7 +1652,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Automatically enables <see cref="KeyboardFuncBlock.LightSingleColor"/>.
 	/// Has no effect when the effect index is 0 (custom RGB mode).
 	/// </summary>
-	public void SetLightPresetColor(byte r, byte g, byte b)
+	internal void SetLightPresetColor(byte r, byte g, byte b)
 	{
 		EnsureNotPolling();
 		var block = FetchFuncBlock();
@@ -1670,7 +1668,7 @@ public sealed class KeyboardSession : IDisposable
 	/// This controls how frequently the firmware polls sensors for rapid-trigger evaluation.
 	/// Values 0-15; higher = more frequent sampling.
 	/// </summary>
-	public void SetTickRate(byte rate)
+	internal void SetTickRate(byte rate)
 	{
 		EnsureNotPolling();
 		var block = FetchFuncBlock();
@@ -1689,7 +1687,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <param name="brightness">Brightness 0-9. Default 9.</param>
 	/// <param name="speed">Animation speed 0-9. Default 5.</param>
 	/// <exception cref="NotSupportedException">Thrown when the connected model has no logo LED zone.</exception>
-	public void SetLogoLightPreset(byte effect, byte brightness = 9, byte speed = 5)
+	internal void SetLogoLightPreset(byte effect, byte brightness = 9, byte speed = 5)
 	{
 		EnsureNotPolling();
 		EnsureHasLogoLight();
@@ -1705,7 +1703,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Only supported on models with a dedicated logo LED (see <see cref="HasLogoLight"/>).
 	/// </summary>
 	/// <exception cref="NotSupportedException">Thrown when the connected model has no logo LED zone.</exception>
-	public void SetLogoLightOff()
+	internal void SetLogoLightOff()
 	{
 		EnsureNotPolling();
 		EnsureHasLogoLight();
@@ -1720,7 +1718,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Only supported on models with a dedicated logo LED (see <see cref="HasLogoLight"/>).
 	/// </summary>
 	/// <exception cref="NotSupportedException">Thrown when the connected model has no logo LED zone.</exception>
-	public void SetLogoLightColor(byte r, byte g, byte b)
+	internal void SetLogoLightColor(byte r, byte g, byte b)
 	{
 		EnsureNotPolling();
 		EnsureHasLogoLight();
@@ -1743,7 +1741,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <param name="brightness">Brightness 0-9. Default 9.</param>
 	/// <param name="speed">Animation speed 0-9. Default 5.</param>
 	/// <exception cref="NotSupportedException">Thrown when the connected model has no side LED zone.</exception>
-	public void SetSideLightPreset(byte effect, byte brightness = 9, byte speed = 5)
+	internal void SetSideLightPreset(byte effect, byte brightness = 9, byte speed = 5)
 	{
 		EnsureNotPolling();
 		EnsureHasSideLight();
@@ -1759,7 +1757,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Only supported on models with a dedicated side LED strip (see <see cref="HasSideLight"/>).
 	/// </summary>
 	/// <exception cref="NotSupportedException">Thrown when the connected model has no side LED zone.</exception>
-	public void SetSideLightOff()
+	internal void SetSideLightOff()
 	{
 		EnsureNotPolling();
 		EnsureHasSideLight();
@@ -1774,7 +1772,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Only supported on models with a dedicated side LED strip (see <see cref="HasSideLight"/>).
 	/// </summary>
 	/// <exception cref="NotSupportedException">Thrown when the connected model has no side LED zone.</exception>
-	public void SetSideLightColor(byte r, byte g, byte b)
+	internal void SetSideLightColor(byte r, byte g, byte b)
 	{
 		EnsureNotPolling();
 		EnsureHasSideLight();
@@ -1882,7 +1880,7 @@ public sealed class KeyboardSession : IDisposable
 	/// </summary>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
 	/// <returns>Array of 128 <see cref="KeyTriggerConfig"/> values, indexed by layout key index.</returns>
-	public KeyTriggerConfig[] ReadKeyTriggers(int profileIndex = 0)
+	internal KeyTriggerConfig[] ReadKeyTriggers(int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		var raw = FetchKeyTriggers(profileIndex);
@@ -1897,7 +1895,7 @@ public sealed class KeyboardSession : IDisposable
 	/// </summary>
 	/// <param name="configs">Exactly 128 configs, indexed by layout key index.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void WriteKeyTriggers(KeyTriggerConfig[] configs, int profileIndex = 0)
+	internal void WriteKeyTriggers(KeyTriggerConfig[] configs, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		if (configs.Length != 128)
@@ -1916,7 +1914,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <param name="keyIndex">Layout index (0-127).</param>
 	/// <param name="config">Trigger configuration to apply.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void SetKeyTrigger(int keyIndex, KeyTriggerConfig config, int profileIndex = 0)
+	internal void SetKeyTrigger(int keyIndex, KeyTriggerConfig config, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		if ((uint)keyIndex >= 128)
@@ -1936,7 +1934,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <param name="config">Trigger configuration to apply.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
 	/// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is not on this model.</exception>
-	public void SetKeyTrigger(DDKey key, KeyTriggerConfig config, int profileIndex = 0) =>
+	internal void SetKeyTrigger(DDKey key, KeyTriggerConfig config, int profileIndex = 0) =>
 		SetKeyTrigger(GetKeyIndex(key), config, profileIndex);
 
 	//
@@ -1987,7 +1985,7 @@ public sealed class KeyboardSession : IDisposable
 	/// </summary>
 	/// <param name="layerIndex">Layer (0 = base, 1 = Fn1, 2 = Fn2, 3 = Fn3). Default: 0.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public UserKey[] ReadKeyMap(int layerIndex = 0, int profileIndex = 0)
+	internal UserKey[] ReadKeyMap(int layerIndex = 0, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		ValidateLayer(layerIndex);
@@ -2001,7 +1999,7 @@ public sealed class KeyboardSession : IDisposable
 	/// </summary>
 	/// <param name="layerIndex">Layer (0 = base, 1 = Fn1, 2 = Fn2, 3 = Fn3). Default: 0.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public UserKey[] ReadDefaultKeyMap(int layerIndex = 0, int profileIndex = 0)
+	internal UserKey[] ReadDefaultKeyMap(int layerIndex = 0, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		ValidateLayer(layerIndex);
@@ -2015,7 +2013,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <param name="keys">Exactly 128 entries indexed by layout key index.</param>
 	/// <param name="layerIndex">Layer (0 = base, 1 = Fn1, 2 = Fn2, 3 = Fn3). Default: 0.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void WriteKeyMap(UserKey[] keys, int layerIndex = 0, int profileIndex = 0)
+	internal void WriteKeyMap(UserKey[] keys, int layerIndex = 0, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		ValidateLayer(layerIndex);
@@ -2035,7 +2033,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <param name="key">The assignment to apply.</param>
 	/// <param name="layerIndex">Layer (0 = base, 1 = Fn1, 2 = Fn2, 3 = Fn3). Default: 0.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void SetKey(int keyIndex, UserKey key, int layerIndex = 0, int profileIndex = 0)
+	internal void SetKey(int keyIndex, UserKey key, int layerIndex = 0, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		ValidateLayer(layerIndex);
@@ -2055,14 +2053,14 @@ public sealed class KeyboardSession : IDisposable
 	/// <param name="layerIndex">Layer (0 = base, 1 = Fn1, 2 = Fn2, 3 = Fn3). Default: 0.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
 	/// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is not on this model.</exception>
-	public void SetKey(DDKey key, UserKey value, int layerIndex = 0, int profileIndex = 0) =>
+	internal void SetKey(DDKey key, UserKey value, int layerIndex = 0, int profileIndex = 0) =>
 		SetKey(GetKeyIndex(key), value, layerIndex, profileIndex);
 
 	private const int DksStride = 768;
 
 	/// <summary>Reads all 32 Dynamic Keystroke slot configurations for the specified profile.</summary>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public DynamicKeystrokeEntry[] ReadDynamicKeystrokeEntries(int profileIndex = 0)
+	internal DynamicKeystrokeEntry[] ReadDynamicKeystrokeEntries(int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		var raw = ReadExtendedGateway(0xA2, (ushort)(DksStride * profileIndex), DksStride);
@@ -2075,7 +2073,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <summary>Writes all 32 Dynamic Keystroke slot configurations for the specified profile.</summary>
 	/// <param name="entries">Exactly 32 Dynamic Keystroke entries.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void WriteDynamicKeystrokeEntries(DynamicKeystrokeEntry[] entries, int profileIndex = 0)
+	internal void WriteDynamicKeystrokeEntries(DynamicKeystrokeEntry[] entries, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		if (entries.Length != DynamicKeystrokeEntry.SlotCount)
@@ -2094,7 +2092,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <param name="slotIndex">DKS slot (0-31).</param>
 	/// <param name="entry">Configuration to apply.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void SetDynamicKeystrokeEntry(int slotIndex, DynamicKeystrokeEntry entry, int profileIndex = 0)
+	internal void SetDynamicKeystrokeEntry(int slotIndex, DynamicKeystrokeEntry entry, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		if ((uint)slotIndex >= DynamicKeystrokeEntry.SlotCount)
@@ -2110,7 +2108,7 @@ public sealed class KeyboardSession : IDisposable
 
 	/// <summary>Reads all 32 Multi-Tap slot configurations for the specified profile.</summary>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public MultiTapEntry[] ReadMultiTapEntries(int profileIndex = 0)
+	internal MultiTapEntry[] ReadMultiTapEntries(int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		var raw = ReadExtendedGateway(0xA4, (ushort)(MtStride * profileIndex),
@@ -2124,7 +2122,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <summary>Writes all 32 Multi-Tap slot configurations for the specified profile.</summary>
 	/// <param name="entries">Exactly 32 Multi-Tap entries.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void WriteMultiTapEntries(MultiTapEntry[] entries, int profileIndex = 0)
+	internal void WriteMultiTapEntries(MultiTapEntry[] entries, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		if (entries.Length != MultiTapEntry.SlotCount)
@@ -2143,7 +2141,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <param name="slotIndex">MT slot (0-31).</param>
 	/// <param name="entry">Configuration to apply.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void SetMultiTapEntry(int slotIndex, MultiTapEntry entry, int profileIndex = 0)
+	internal void SetMultiTapEntry(int slotIndex, MultiTapEntry entry, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		if ((uint)slotIndex >= MultiTapEntry.SlotCount)
@@ -2164,7 +2162,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Each returned <see cref="UserKey"/> is the key that toggles on/off when pressed.
 	/// </summary>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public UserKey[] ReadToggleKeyEntries(int profileIndex = 0)
+	internal UserKey[] ReadToggleKeyEntries(int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		var raw = ReadExtendedGateway(0xA6, (ushort)(TglStride * profileIndex),
@@ -2175,7 +2173,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <summary>Writes all 32 Toggle slot configurations for the specified profile.</summary>
 	/// <param name="entries">Exactly 32 entries; each is the key that toggles.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void WriteToggleKeyEntries(UserKey[] entries, int profileIndex = 0)
+	internal void WriteToggleKeyEntries(UserKey[] entries, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		if (entries.Length != TglSlotCount)
@@ -2193,7 +2191,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <param name="slotIndex">Toggle slot (0-31).</param>
 	/// <param name="entry">The key that toggles on/off when pressed.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void SetToggleKeyEntry(int slotIndex, UserKey entry, int profileIndex = 0)
+	internal void SetToggleKeyEntry(int slotIndex, UserKey entry, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		if ((uint)slotIndex >= TglSlotCount)
@@ -2212,7 +2210,7 @@ public sealed class KeyboardSession : IDisposable
 	/// </summary>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
 	/// <returns>Array of 32 elements; each element is the action sequence for that slot.</returns>
-	public MacroAction[][] ReadMacroSlots(int profileIndex = 0)
+	internal MacroAction[][] ReadMacroSlots(int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		var raw = ReadExtendedGateway(0x0C, (ushort)(MacroStride * profileIndex), MacroStride);
@@ -2226,7 +2224,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Exactly 32 elements. Null or empty arrays produce empty slot entries.
 	/// </param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void WriteMacroSlots(MacroAction[]?[] slots, int profileIndex = 0)
+	internal void WriteMacroSlots(MacroAction[]?[] slots, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		if (slots.Length != MacroAction.SlotCount)
@@ -2242,7 +2240,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <param name="slotIndex">Slot index (0-31).</param>
 	/// <param name="actions">Action sequence for the slot. Pass an empty array to clear.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void SetMacroSlot(int slotIndex, MacroAction[] actions, int profileIndex = 0)
+	internal void SetMacroSlot(int slotIndex, MacroAction[] actions, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		if ((uint)slotIndex >= MacroAction.SlotCount)
@@ -2274,7 +2272,7 @@ public sealed class KeyboardSession : IDisposable
 	/// the change takes effect at once on the hardware.
 	/// </summary>
 	/// <param name="profileIndex">Target profile (0-based, 0–<see cref="ProfileCount"/>−1).</param>
-	public void SwitchProfile(int profileIndex)
+	internal void SwitchProfile(int profileIndex)
 	{
 		EnsureNotPolling();
 		ValidateProfileIndex(profileIndex);
@@ -2285,7 +2283,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Reads the currently active profile index from the keyboard.
 	/// </summary>
 	/// <returns>Zero-based profile index.</returns>
-	public int GetCurrentProfile()
+	internal int GetCurrentProfile()
 	{
 		EnsureNotPolling();
 		var raw = ReadExtendedGateway(0x04, 0, BaseBlockSize);
@@ -2297,7 +2295,7 @@ public sealed class KeyboardSession : IDisposable
 	/// <see cref="FullProfileData"/> snapshot containing all sections.
 	/// </summary>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public FullProfileData PullFullProfile(int profileIndex = 0)
+	internal FullProfileData PullFullProfile(int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		EnsureHasFuncBlock();
@@ -2335,7 +2333,7 @@ public sealed class KeyboardSession : IDisposable
 	/// </summary>
 	/// <param name="data">Profile data to push.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void PushFullProfile(FullProfileData data, int profileIndex = 0)
+	internal void PushFullProfile(FullProfileData data, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 
@@ -2469,7 +2467,7 @@ public sealed class KeyboardSession : IDisposable
 	/// </summary>
 	/// <param name="fromSlot">Source profile index (0-based, 0–<see cref="ProfileCount"/>−1).</param>
 	/// <param name="toSlot">Destination profile index (0-based, 0–<see cref="ProfileCount"/>−1).</param>
-	public void CopyProfile(int fromSlot, int toSlot)
+	internal void CopyProfile(int fromSlot, int toSlot)
 	{
 		EnsureNotPolling();
 		ValidateProfileIndex(fromSlot);
@@ -2483,7 +2481,7 @@ public sealed class KeyboardSession : IDisposable
 	/// Modify the returned instance and pass it to <see cref="WriteFuncBlock"/> to apply changes.
 	/// </summary>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public KeyboardFuncBlock ReadFuncBlock(int profileIndex = 0)
+	internal KeyboardFuncBlock ReadFuncBlock(int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		return FetchFuncBlock(profileIndex);
@@ -2495,7 +2493,7 @@ public sealed class KeyboardSession : IDisposable
 	/// </summary>
 	/// <param name="block">The block to write.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void WriteFuncBlock(KeyboardFuncBlock block, int profileIndex = 0)
+	internal void WriteFuncBlock(KeyboardFuncBlock block, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		PushFuncBlock(block, profileIndex);
