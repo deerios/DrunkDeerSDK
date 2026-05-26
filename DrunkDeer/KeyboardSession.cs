@@ -1480,24 +1480,20 @@ public class KeyboardSession : IDisposable
 
 	private void ApplyTheme(KeyboardTheme theme)
 	{
+		var (br, bg, bb) = theme.BaseColor;
 		for (int i = 0; i < _rgbIndices.Length; i++)
-			_rgbProfile[_rgbIndices[i]] = (theme.R, theme.G, theme.B);
+			_rgbProfile[_rgbIndices[i]] = (br, bg, bb);
 
 		if (theme.Keys != null)
 		{
-			foreach (var (name, rgb) in theme.Keys)
+			foreach (var (name, keyColor) in theme.Keys)
 			{
-				if (rgb is not { Length: >= 3 })
-				{
-					_log.Warning("ApplyTheme: key '{Key}' has invalid RGB array; skipped.", name);
-					continue;
-				}
 				if (!Enum.TryParse<DDKey>(name, ignoreCase: true, out var key) || !TryGetKeyIndex(key, out int gridIdx))
 				{
 					_log.Warning("ApplyTheme: unknown key '{Key}'; skipped.", name);
 					continue;
 				}
-				_rgbProfile[gridIdx] = (rgb[0], rgb[1], rgb[2]);
+				_rgbProfile[gridIdx] = (keyColor.R, keyColor.G, keyColor.B);
 			}
 		}
 
@@ -2439,9 +2435,7 @@ public class KeyboardSession : IDisposable
 		{
 			theme = new KeyboardTheme
 			{
-				R          = funcBlock.LightColorR,
-				G          = funcBlock.LightColorG,
-				B          = funcBlock.LightColorB,
+				BaseColor  = new RgbColor(funcBlock.LightColorR, funcBlock.LightColorG, funcBlock.LightColorB),
 				Brightness = funcBlock.LightBrightness,
 			};
 		}

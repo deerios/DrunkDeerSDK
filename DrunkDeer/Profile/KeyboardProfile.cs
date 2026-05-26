@@ -26,7 +26,7 @@ namespace DrunkDeer.Protocol;
 /// {
 ///     ActuationMm  = 2.0f,
 ///     RapidTrigger = true,
-///     Theme        = new KeyboardTheme { R = 0, G = 80, B = 255, Brightness = 7 }
+///     Theme        = new KeyboardThemeBuilder().Base(0, 80, 255).Brightness(7).Build()
 /// };
 /// session.ApplyProfile(profile);
 ///
@@ -124,32 +124,71 @@ public sealed class KeyboardProfile
 	public void SaveToFile(string path) => File.WriteAllText(path, ToJson());
 }
 
+/// <summary>An RGB colour value.</summary>
+public readonly struct RgbColor
+{
+	/// <summary>Red channel (0-255).</summary>
+	[JsonPropertyName("r")]
+	public byte R { get; init; }
+
+	/// <summary>Green channel (0-255).</summary>
+	[JsonPropertyName("g")]
+	public byte G { get; init; }
+
+	/// <summary>Blue channel (0-255).</summary>
+	[JsonPropertyName("b")]
+	public byte B { get; init; }
+
+	/// <param name="r">Red channel (0-255).</param>
+	/// <param name="g">Green channel (0-255).</param>
+	/// <param name="b">Blue channel (0-255).</param>
+	[JsonConstructor]
+	public RgbColor(byte r, byte g, byte b) => (R, G, B) = (r, g, b);
+
+	public void Deconstruct(out byte r, out byte g, out byte b) => (r, g, b) = (R, G, B);
+}
+
+/// <summary>Per-key colour override, with an optional brightness that overrides the theme-level brightness.</summary>
+public sealed class KeyColor
+{
+	/// <summary>Red channel (0-255).</summary>
+	[JsonPropertyName("r")]
+	public byte R { get; set; }
+
+	/// <summary>Green channel (0-255).</summary>
+	[JsonPropertyName("g")]
+	public byte G { get; set; }
+
+	/// <summary>Blue channel (0-255).</summary>
+	[JsonPropertyName("b")]
+	public byte B { get; set; }
+
+	/// <summary>Per-key firmware brightness (0-9). When null, the theme-level <see cref="KeyboardTheme.Brightness"/> is used.</summary>
+	[JsonPropertyName("brightness")]
+	public byte? Brightness { get; set; }
+}
+
 /// <summary>
 /// RGB lighting configuration included in a <see cref="KeyboardProfile"/>.
+/// Build instances with <see cref="KeyboardThemeBuilder"/>.
 /// </summary>
 /// <remarks>
-/// If <see cref="Keys"/> is null or empty the entire keyboard is set to the uniform
-/// colour (<see cref="R"/>, <see cref="G"/>, <see cref="B"/>). If <see cref="Keys"/>
-/// is non-empty, per-key colours are applied; any key not listed in the map keeps its
-/// current colour unless a non-black uniform base is also set.
+/// If <see cref="Keys"/> is null or empty the entire keyboard is set to <see cref="BaseColor"/>.
+/// If <see cref="Keys"/> is non-empty, per-key colours are applied on top; any key not listed
+/// keeps the base colour. Per-key entries may carry their own <see cref="KeyColor.Brightness"/>;
+/// keys without one inherit the theme-level <see cref="Brightness"/>.
 /// </remarks>
 /// <example>
 /// <code>
 /// // Solid cyan at 70% brightness
-/// var theme = new KeyboardTheme { R = 0, G = 255, B = 200, Brightness = 6 };
+/// var theme = new KeyboardThemeBuilder().Base(0, 255, 200).Brightness(6).Build();
 ///
 /// // Orange WASD on a dark-blue background
-/// var theme = new KeyboardTheme
-/// {
-///     R = 0, G = 0, B = 40, Brightness = 9,
-///     Keys = new Dictionary&lt;string, byte[]&gt;
-///     {
-///         ["W"] = [255, 140, 0],
-///         ["A"] = [255, 140, 0],
-///         ["S"] = [255, 140, 0],
-///         ["D"] = [255, 140, 0],
-///     }
-/// };
+/// var theme = new KeyboardThemeBuilder()
+///     .Base(0, 0, 40)
+///     .Brightness(9)
+///     .Keys([DDKey.W, DDKey.A, DDKey.S, DDKey.D], 255, 140, 0)
+///     .Build();
 /// </code>
 /// </example>
 public sealed class KeyboardTheme
@@ -158,23 +197,14 @@ public sealed class KeyboardTheme
 	[JsonPropertyName("brightness")]
 	public byte Brightness { get; set; } = 9;
 
-	/// <summary>Uniform base colour - red channel (0-255).</summary>
-	[JsonPropertyName("r")]
-	public byte R { get; set; }
-
-	/// <summary>Uniform base colour - green channel (0-255).</summary>
-	[JsonPropertyName("g")]
-	public byte G { get; set; }
-
-	/// <summary>Uniform base colour - blue channel (0-255).</summary>
-	[JsonPropertyName("b")]
-	public byte B { get; set; }
+	/// <summary>Uniform base colour applied to every key before per-key overrides.</summary>
+	[JsonPropertyName("baseColor")]
+	public RgbColor BaseColor { get; set; }
 
 	/// <summary>
-	/// Per-key colour overrides. Key is a <see cref="DDKey"/> name (case-insensitive);
-	/// value is a three-element <c>[R, G, B]</c> byte array. Keys absent from this map
-	/// keep the uniform base colour (if set) or their previous colour.
+	/// Per-key colour overrides. Key is a <see cref="DDKey"/> name (case-insensitive).
+	/// Keys absent from this map keep <see cref="BaseColor"/>.
 	/// </summary>
 	[JsonPropertyName("keys")]
-	public Dictionary<string, byte[]>? Keys { get; set; }
+	public Dictionary<string, KeyColor>? Keys { get; set; }
 }

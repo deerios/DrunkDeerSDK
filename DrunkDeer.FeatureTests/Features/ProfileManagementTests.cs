@@ -318,9 +318,9 @@ public class ProfileManagementTests
 		Assert.That(profile.Theme, Is.Not.Null, "theme captured");
 		Assert.Multiple(() =>
 		{
-			Assert.That(profile.Theme!.R, Is.EqualTo(0xFF));
-			Assert.That(profile.Theme!.G, Is.EqualTo(0x80));
-			Assert.That(profile.Theme!.B, Is.EqualTo(0x10));
+			Assert.That(profile.Theme!.BaseColor.R, Is.EqualTo(0xFF));
+			Assert.That(profile.Theme!.BaseColor.G, Is.EqualTo(0x80));
+			Assert.That(profile.Theme!.BaseColor.B, Is.EqualTo(0x10));
 			Assert.That(profile.Theme!.Brightness, Is.EqualTo(7));
 		});
 	}
