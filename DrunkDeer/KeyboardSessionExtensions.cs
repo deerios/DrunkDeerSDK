@@ -181,6 +181,29 @@ public static class KeyboardSessionExtensions
         KeyboardFuncBlock block, int profileIndex = 0)
         where T : IHasFuncBlock => s.WriteFuncBlock(block, profileIndex);
 
+    /// <summary>Reads the stored per-key RGB colours from the keyboard's flash for the specified profile.</summary>
+    public static (byte R, byte G, byte B)[] ReadStoredColors<T>(this KeyboardSession<T> s,
+        int profileIndex = 0)
+        where T : IHasFuncBlock => s.ReadStoredColors(profileIndex);
+
+    /// <summary>Writes per-key RGB colours to the keyboard's flash for the specified profile.</summary>
+    public static void WriteStoredColors<T>(this KeyboardSession<T> s,
+        (byte R, byte G, byte B)[] colors, int profileIndex = 0)
+        where T : IHasFuncBlock => s.WriteStoredColors(colors, profileIndex);
+
+    /// <summary>Saves the current in-memory colour profile to the keyboard's flash for the specified profile slot.</summary>
+    public static void SaveLightingToProfile<T>(this KeyboardSession<T> s, int profileIndex = 0)
+        where T : IHasFuncBlock => s.SaveLightingToProfile(profileIndex);
+
+    /// <summary>Loads the stored per-key colours for the specified profile from flash and applies them live.</summary>
+    public static void LoadLightingFromProfile<T>(this KeyboardSession<T> s,
+        int profileIndex = 0, byte brightness = 9)
+        where T : IHasFuncBlock => s.LoadLightingFromProfile(profileIndex, brightness);
+
+    /// <summary>Reads the currently displayed per-key RGB colours from the keyboard regardless of the active lighting effect.</summary>
+    public static (byte R, byte G, byte B)[] ReadLiveColors<T>(this KeyboardSession<T> s)
+        where T : IHasFuncBlock => s.ReadLiveColors();
+
     // ── IHasBerserkMode ──────────────────────────────────────────────────────
 
     /// <summary>

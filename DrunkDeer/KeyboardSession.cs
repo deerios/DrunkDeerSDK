@@ -129,7 +129,7 @@ public class KeyboardSession : IDisposable
 	private readonly float[] _upstrokeProfile;
 
 	// Stateful RGB profile - used by SetKeyColor to preserve other keys' colours.
-	private readonly (byte R, byte G, byte B)[] _rgbProfile = new (byte, byte, byte)[127];
+	private readonly (byte R, byte G, byte B)[] _rgbProfile = new (byte, byte, byte)[128];
 
 	// Stateful global feature flags - mirrored from the keyboard and kept in sync by
 	// Enable/Disable helpers so SendCommonConfig can always rebuild a complete packet.
@@ -1145,7 +1145,7 @@ public class KeyboardSession : IDisposable
 	/// Returns 128 entries indexed by layout key index.
 	/// </summary>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public (byte R, byte G, byte B)[] ReadStoredColors(int profileIndex = 0)
+	internal (byte R, byte G, byte B)[] ReadStoredColors(int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		var raw = ReadExtendedGateway(0x0A, (ushort)(StoredColorStride * profileIndex), StoredColorByteCount);
@@ -1162,7 +1162,7 @@ public class KeyboardSession : IDisposable
 	/// </summary>
 	/// <param name="colors">128 RGB entries indexed by layout key index.</param>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void WriteStoredColors((byte R, byte G, byte B)[] colors, int profileIndex = 0)
+	internal void WriteStoredColors((byte R, byte G, byte B)[] colors, int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		if (colors.Length != StoredColorKeyCount)
@@ -1186,7 +1186,7 @@ public class KeyboardSession : IDisposable
 	/// set to custom (effect = 0) via <see cref="SetLightCustom"/>.
 	/// </summary>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
-	public void SaveLightingToProfile(int profileIndex = 0)
+	internal void SaveLightingToProfile(int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		var raw = new byte[StoredColorByteCount];
@@ -1206,7 +1206,7 @@ public class KeyboardSession : IDisposable
 	/// </summary>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
 	/// <param name="brightness">Firmware brightness level (0-9, default 9 = maximum).</param>
-	public void LoadLightingFromProfile(int profileIndex = 0, byte brightness = 9)
+	internal void LoadLightingFromProfile(int profileIndex = 0, byte brightness = 9)
 	{
 		EnsureNotPolling();
 		var raw = ReadExtendedGateway(0x0A, (ushort)(StoredColorStride * profileIndex), StoredColorByteCount);
@@ -1219,7 +1219,7 @@ public class KeyboardSession : IDisposable
 	/// Reads the currently displayed per-key RGB colours from the keyboard regardless of
 	/// the active lighting effect mode. Returns 128 entries indexed by layout key index.
 	/// </summary>
-	public (byte R, byte G, byte B)[] ReadLiveColors()
+	internal (byte R, byte G, byte B)[] ReadLiveColors()
 	{
 		EnsureNotPolling();
 		var raw = ReadExtendedGateway(0xDE, 0, StoredColorByteCount);
