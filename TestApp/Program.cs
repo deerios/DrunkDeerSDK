@@ -39,7 +39,9 @@ try
 	//Log.Information(JsonConvert.SerializeObject(profile));
 
 	//session.SetKeyColor(DDKey.B, 0, 255, 0, 3);
-	session.SetLightPreset(effect: 3, brightness: 7, speed: 4);
+	//session.SetLightPreset(effect: 3, brightness: 7, speed: 4);
+
+	session.SetKeyboardMode(KeyboardMode.Mac);
 
 	//Log.Information(JsonConvert.SerializeObject(session.HasFuncBlock));
 	//Log.Information(JsonConvert.SerializeObject(session.ReadLiveColors()));

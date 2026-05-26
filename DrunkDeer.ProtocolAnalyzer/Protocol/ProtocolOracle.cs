@@ -103,8 +103,12 @@ public static class ProtocolOracle
         // 0xAA sent by host: ClearRtpUpper (no expected response known)
         0xAA when b.Length > 2 && b[1] == 0x00 && b[2] == 0x01 => ("ClearRtpUpper", null, null),
 
-        // RGB (0xAE): SetLightingOff has a more specific header than RgbKeyDataPacket
+        // RGB (0xAE): three formats share the same opcode.
+        // SetLightingOff:  AE 01 00 00 05 09 ... (most specific)
+        // SetLightingMode: AE 01 00 [slot] [mode] [brightness] [speed] 00 ... (byte[7]=0x00)
+        // RgbKeyDataPacket: AE 01 [is_turbo] 00 [mode] 06 [brightness] FF ... (byte[7]=0xFF sentinel)
         0xAE when b.Length > 5 && b[1] == 0x01 && b[2] == 0x00 && b[4] == 0x05 => ("SetLightingOff",    "RgbAcknowledge", 0xAE),
+        0xAE when b.Length > 7 && b[1] == 0x01 && b[2] == 0x00 && b[7] != 0xFF  => ("SetLightingMode",   "RgbAcknowledge", 0xAE),
         0xAE when b.Length > 1 && b[1] == 0x01                                  => ("RgbKeyDataPacket",  "RgbAcknowledge", 0xAE),
 
         // Last-Win / RTP (0xFC)

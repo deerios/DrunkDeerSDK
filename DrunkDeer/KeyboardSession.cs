@@ -1331,6 +1331,49 @@ public sealed class KeyboardSession : IDisposable
 		ConfigureLastWinPairs(rawPairs);
 	}
 
+	private const int RemapChunkCount       = 14;
+	private const int RemapEntriesPerChunk  = 9;
+	private const byte RemapTailMarker      = 0xA5;
+	private const int  RemapEntriesOffset   = 6; // 3-byte header + packetNumber + 0x0E const + layerGroup
+
+	/// <summary>
+	/// Pushes a complete key remap table to the keyboard (42 packets: 14 chunks × 3 layers).
+	/// Each slot in <paramref name="table"/> that is unset sends an all-zero entry, which
+	/// the firmware interprets as "no key at this position".
+	/// </summary>
+	/// <param name="table">
+	/// The remap table to apply. Populate it with <see cref="KeyRemapTable.SetHidKey"/> or
+	/// <see cref="KeyRemapTable.SetModifierKey"/> before calling this method.
+	/// </param>
+	public void SetRemap(KeyRemapTable table)
+	{
+		EnsureNotPolling();
+
+		for (int layer = 0; layer < KeyRemapTable.LayerCount; layer++)
+		{
+			for (int chunk = 0; chunk < RemapChunkCount; chunk++)
+			{
+				var buf = KeyRemapPacket.Build(
+					packetNumber: (byte)(chunk + 1),
+					layerGroup:   (byte)(layer + 1));
+
+				int offset = RemapEntriesOffset;
+				for (int pos = 0; pos < RemapEntriesPerChunk; pos++)
+				{
+					int slot = chunk * RemapEntriesPerChunk + pos;
+					table.GetEntry(layer, slot).Write(buf.AsSpan(offset));
+					offset += KeyRemapEntry.ByteSize;
+				}
+				buf[offset] = RemapTailMarker;
+
+				var resp = _connection.SendAndReceive(buf);
+				if (resp is null || resp[0] != 0xA0)
+					throw new InvalidOperationException(
+						$"No ACK for remap packet (layer={layer + 1}, chunk={chunk + 1}).");
+			}
+		}
+	}
+
 	/// <summary>Enables Rapid Trigger globally.</summary>
 	/// <param name="autoMatch">
 	/// When <see langword="true"/>, the Rapid Trigger release threshold automatically mirrors
