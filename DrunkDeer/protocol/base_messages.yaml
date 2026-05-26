@@ -214,46 +214,14 @@ messages:
   # Sets the active RGB mode WITHOUT per-key colour data. Used for the
   # built-in firmware animations (Spectrum, Breath, Ripple, etc.) where
   # the firmware generates per-key colours from mode_code alone.
-  #
-  # Distinct from RgbKeyDataPacket: same opcode (0xAE 0x01) but the byte
-  # at offset 2 is zero (a literal in the header here) rather than a mode
-  # code carrying per-key data. The firmware uses byte 2 to switch
-  # between the two formats — non-zero routes to the per-key data path.
-  #
-  # Source: JS sendLedModeData(B,C,E,a,r) in the official web driver.
-  # Slider→param mapping (which of param_a/param_b carries brightness
-  # vs animation speed) is not confirmed from JS source alone; a capture
-  # of the colour-panel sliders driving the value would disambiguate.
-  # The trailing byte is observed as 0 in every JS call site.
-  #
-  # Mode catalog (1-based mode_code values, extracted from the bundle's
-  # English locale color1..color26 strings):
-  #
-  #    1  Lighting off                  14  Glowing Fish
-  #    2  Rotate Marquee                15  Surfing Cross
-  #    3  Wave Spectrum                 16  Heart
-  #    4  Surf to the right             17  Traffic
-  #    5  Breath                        18  Gluttonous Snake
-  #    6  Center Surfing                19  Raindrops
-  #    7  Spectrum                      20  Turbo mode light   *uses RgbKeyDataPacket*
-  #    8  Ripple                        21  Custom light       *uses RgbKeyDataPacket*
-  #    9  Always light                  22  Stars
-  #   10  Light by press                23  Surfing down
-  #   11  Serpentine to the centre      24  Repeat Surfing
-  #   12  Colorful fountain             25  Random Fountain
-  #   13  Laser Key                     26  Dance of Demons
-  #
-  # Modes 20 and 21 require per-key colour data — use RgbKeyDataPacket
-  # for those. Mode 1 (Lighting off) is more commonly set via the
-  # dedicated SetLightingOff opcode below.
   SetLightingMode:
     direction: request
     header: [0xAE, 0x01, 0x00]
     payload:
       slot:        u8
       mode_code:   u8
-      param_a:     u8
-      param_b:     u8
+      brightness:  u8
+      speed:       u8
       tail:        u8
     padding_to: 64
 
