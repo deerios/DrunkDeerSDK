@@ -217,7 +217,7 @@ public class FuncBlockTests
 	public void SetLightPreset_WritesEffectBrightnessSpeedToBlock()
 	{
 		_fake.EnqueueFuncBlockCycle();
-		_session.SetLightPreset(effect: 3, brightness: 7, speed: 4);
+		_session.SetLightPreset(effect: LightPreset.SurfToTheRight, brightness: 7, speed: 4);
 		var block = CaptureWrittenBlock();
 		Assert.Multiple(() =>
 		{
@@ -287,7 +287,7 @@ public class FuncBlockTests
 	public void SetLogoLightPreset_WritesEffectBrightnessSpeedToBytes24_26()
 	{
 		_fake.EnqueueFuncBlockCycle();
-		_session.SetLogoLightPreset(effect: 2, brightness: 8, speed: 3);
+		_session.SetLogoLightPreset(effect: LightPreset.WaveSpectrum, brightness: 8, speed: 3);
 		var block = CaptureWrittenBlock();
 		Assert.Multiple(() =>
 		{
@@ -329,7 +329,7 @@ public class FuncBlockTests
 	public void SetSideLightPreset_WritesEffectBrightnessSpeedToBytes32_34()
 	{
 		_fake.EnqueueFuncBlockCycle();
-		_session.SetSideLightPreset(effect: 4, brightness: 6, speed: 2);
+		_session.SetSideLightPreset(effect: LightPreset.Breath, brightness: 6, speed: 2);
 		var block = CaptureWrittenBlock();
 		Assert.Multiple(() =>
 		{
