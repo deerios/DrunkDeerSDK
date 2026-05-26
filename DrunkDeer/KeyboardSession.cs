@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.ComponentModel.DataAnnotations;
+using System.Runtime.CompilerServices;
 using Serilog;
 using System.Buffers.Binary;
 using System.Diagnostics;
@@ -28,6 +29,50 @@ public enum KeyboardMode : byte
 	/// </summary>
 	Mac = 1,
 }
+
+/// <summary>
+/// Built-in firmware lighting animation preset for <see cref="KeyboardSessionExtensions.SetLightPreset"/>,
+/// <see cref="KeyboardSessionExtensions.SetLogoLightPreset"/>, and
+/// <see cref="KeyboardSessionExtensions.SetSideLightPreset"/>.
+/// </summary>
+/// <remarks>
+/// <see cref="Custom"/> (byte 0) switches to per-key custom RGB mode.
+/// Values 1 and above are the firmware's sequential preset indices, inferred from firmware
+/// locale strings. Exact byte assignments should be verified via USB capture if
+/// precise control is required.
+/// </remarks>
+public enum LightPreset : byte
+{
+    /// <summary>Per-key custom RGB mode. Colours set via SetLighting/SetKeyColor take effect.</summary>
+    Custom = 0,
+    RotateMarquee = 1,
+    WaveSpectrum = 2,
+    SurfToTheRight = 3,
+    Breath = 4,
+    CenterSurfing = 5,
+    Spectrum = 6,
+    Ripple = 7,
+    AlwaysLight = 8,
+    LightByPress = 9,
+    SerpentineToTheCentre = 10,
+    LaserKey = 11,
+    GlowingFish = 12,
+    SurfingCross = 13,
+    Heart = 14,
+    Traffic = 15,
+    GluttonousSnake = 16,
+    Raindrops = 17,
+    Stars = 18,
+    SurfingDown = 19,
+    RepeatSurfing = 20,
+    RandomFountain = 21,
+    DanceOfDemons = 22,
+}
+
+/// <summary>
+/// A pair of keys that compete under Last Win: whichever was most recently pressed takes priority.
+/// </summary>
+public readonly record struct LastWinPair(DDKey A, DDKey B);
 
 /// <summary>
 /// Key-point encoding precision determined at connect time from the model's capabilities
@@ -61,31 +106,52 @@ public enum LastWinRapidTriggerMode : byte
 }
 
 /// <summary>
-/// Wire mode codes for <see cref="KeyboardSession.SetLightingMode"/>.
-/// Only values confirmed by USB capture are given named constants; pass raw bytes for
-/// modes not yet mapped. The full firmware catalogue (26 modes) is listed below.
+/// AE-path lighting animation mode codes for <see cref="KeyboardSession.SetLightingMode"/>.
+/// All 18 values confirmed by USB packet capture (sequential clicks through the firmware UI).
 /// </summary>
 /// <remarks>
-/// Known wire codes (confirmed):
-/// <list type="table">
-/// <item><term>0x05</term><description>Off / firmware default (observed via SetLightingOff opcode)</description></item>
-/// <item><term>0x12</term><description>Colorful Fountain (confirmed by capture)</description></item>
-/// </list>
-/// Remaining mode names extracted from firmware locale strings; wire codes unknown:
-/// Rotate Marquee, Wave Spectrum, Surf to the Right, Breath, Center Surfing, Spectrum,
-/// Ripple, Always Light, Light by Press, Serpentine to the Centre, Laser Key,
-/// Glowing Fish, Surfing Cross, Heart, Traffic, Gluttonous Snake, Raindrops, Stars,
-/// Surfing Down, Repeat Surfing, Random Fountain, Dance of Demons.
-/// Modes "Turbo mode light" and "Custom light" require per-key colour data -
-/// use <see cref="KeyboardSession.SetLighting"/> for those instead.
+/// "Turbo mode light" and "Custom light" require per-key colour data sent via
+/// <see cref="KeyboardSession.SetLighting"/> — they do not use this enum.
+/// To turn off all lighting use <see cref="KeyboardSession.DisableLighting"/>.
 /// </remarks>
-public static class LightingMode
+public enum LightingMode : byte
 {
-	/// <summary>Turns off lighting / firmware default state. Wire code 0x05.</summary>
-	public const byte Off = 0x05;
-
-	/// <summary>Colorful Fountain animation. Wire code 0x12 (confirmed by USB capture).</summary>
-	public const byte ColorfulFountain = 0x12;
+	/// <summary>Rotate Marquee animation.</summary>
+	RotateMarquee = 0x01,
+	/// <summary>Always-on solid colour.</summary>
+	AlwaysLight = 0x02,
+	/// <summary>Colour spectrum cycle.</summary>
+	Spectrum = 0x03,
+	/// <summary>Breathing pulse animation.</summary>
+	Breath = 0x04,
+	/// <summary>Lights up keys only while they are held.</summary>
+	LightByPress = 0x05,
+	/// <summary>Static starfield effect.</summary>
+	Stars = 0x06,
+	/// <summary>Wave spectrum animation.</summary>
+	WaveSpectrum = 0x07,
+	/// <summary>Centre-out surfing wave.</summary>
+	CenterSurfing = 0x08,
+	/// <summary>Top-down surfing wave.</summary>
+	SurfingDown = 0x09,
+	/// <summary>Ripple on keypress animation.</summary>
+	Ripple = 0x0A,
+	/// <summary>Glowing fish swimming animation.</summary>
+	GlowingFish = 0x0B,
+	/// <summary>Colourful fountain animation.</summary>
+	ColorfulFountain = 0x0C,
+	/// <summary>Traffic-light colour cycling.</summary>
+	Traffic = 0x0D,
+	/// <summary>Gluttonous snake game animation.</summary>
+	GluttonousSnake = 0x0E,
+	/// <summary>Repeat surfing wave.</summary>
+	RepeatSurfing = 0x0F,
+	/// <summary>Cross-shaped surfing pattern.</summary>
+	SurfingCross = 0x10,
+	/// <summary>Laser key scan animation.</summary>
+	LaserKey = 0x11,
+	/// <summary>Random fountain bursts.</summary>
+	RandomFountain = 0x12,
 }
 
 /// <summary>
@@ -263,6 +329,9 @@ public class KeyboardSession : IDisposable
 	/// </summary>
 	public float GetKeyHeightMm(DDKey key) => GetKeyHeightMm(GetKeyIndex(key));
 
+	/// <summary>Returns the set of <see cref="DDKey"/> values present on this keyboard model.</summary>
+	public IEnumerable<DDKey> GetKeys() => _keyIndexMap.Keys;
+
 	/// <summary>
 	/// Returns a snapshot of all key travel depths in millimetres, indexed by layout key index.
 	/// Length equals <see cref="TotalKeyCount"/>. Keys at rest return 0.
@@ -274,6 +343,31 @@ public class KeyboardSession : IDisposable
 		for (int i = 0; i < TotalKeyCount; i++)
 			mm[i] = _heights[i] / scale;
 		return mm;
+	}
+
+	/// <summary>
+	/// Returns the last-polled travel depth for every key present on this model,
+	/// keyed by <see cref="DDKey"/>. Keys at rest return 0.
+	/// </summary>
+	public IReadOnlyDictionary<DDKey, float> GetAllKeyHeightsMmByKey()
+	{
+		float scale = HeightScale;
+		var dict = new Dictionary<DDKey, float>(_keyIndexMap.Count);
+		foreach (var (key, idx) in _keyIndexMap)
+			dict[key] = _heights[idx] / scale;
+		return dict;
+	}
+
+	/// <summary>
+	/// Converts a per-index depth array (as returned by <see cref="ReadActuationPoint"/> etc.)
+	/// into a <see cref="DDKey"/>-keyed dictionary using this session's key layout.
+	/// </summary>
+	internal IReadOnlyDictionary<DDKey, float> ToKeyDictionary(float[] values)
+	{
+		var dict = new Dictionary<DDKey, float>(_keyIndexMap.Count);
+		foreach (var (key, idx) in _keyIndexMap)
+			dict[key] = values[idx];
+		return dict;
 	}
 
 	/// <summary>
@@ -794,9 +888,9 @@ public class KeyboardSession : IDisposable
 
 	/// <summary>
 	/// Reads the actuation point profile and returns per-key depths in mm.
-	/// Only supported on high-precision models.
+	/// Only supported on high-precision (FD) models.
 	/// </summary>
-	public float[] ReadActuationPoint()
+	internal float[] ReadActuationPoint()
 	{
 		if (_precisionMode != PrecisionMode.FD)
 			throw new NotSupportedException(
@@ -810,9 +904,9 @@ public class KeyboardSession : IDisposable
 
 	/// <summary>
 	/// Reads the downstroke point profile and returns per-key depths in mm.
-	/// Only supported on high-precision models.
+	/// Only supported on high-precision (FD) models.
 	/// </summary>
-	public float[] ReadDownstrokePoint()
+	internal float[] ReadDownstrokePoint()
 	{
 		if (_precisionMode != PrecisionMode.FD)
 			throw new NotSupportedException(
@@ -826,9 +920,9 @@ public class KeyboardSession : IDisposable
 
 	/// <summary>
 	/// Reads the upstroke point profile and returns per-key depths in mm.
-	/// Only supported on high-precision models.
+	/// Only supported on high-precision (FD) models.
 	/// </summary>
-	public float[] ReadUpstrokePoint()
+	internal float[] ReadUpstrokePoint()
 	{
 		if (_precisionMode != PrecisionMode.FD)
 			throw new NotSupportedException(
@@ -1037,7 +1131,7 @@ public class KeyboardSession : IDisposable
 	/// session.SetLighting(gridIdx => wasd.Contains(gridIdx) ? (0, 0, 255) : (0, 0, 0));
 	/// </code>
 	/// </example>
-	public void SetLighting(Func<int, (byte R, byte G, byte B)> colorForKey, byte brightness = 9)
+	public void SetLighting(Func<int, (byte R, byte G, byte B)> colorForKey, [Range(0, 9)] byte brightness = 9)
 	{
 		EnsureNotPolling();
 		for (int i = 0; i < _rgbIndices.Length; i++)
@@ -1054,11 +1148,15 @@ public class KeyboardSession : IDisposable
 	/// <param name="g">Green channel (0-255).</param>
 	/// <param name="b">Blue channel (0-255).</param>
 	/// <param name="brightness">Firmware brightness level (0-9, default 9 = maximum).</param>
-	public void SetUniformLighting(byte r, byte g, byte b, byte brightness = 9)
+	public void SetUniformLighting(byte r, byte g, byte b, [Range(0, 9)] byte brightness = 9)
 	{
 		EnsureNotPolling();
 		SetLighting(_ => (r, g, b), brightness);
 	}
+
+	/// <inheritdoc cref="SetUniformLighting(byte, byte, byte, byte)"/>
+	public void SetUniformLighting(RgbColor color, [Range(0, 9)] byte brightness = 9)
+		=> SetUniformLighting(color.R, color.G, color.B, brightness);
 
 	/// <summary>
 	/// Sets the colour of a single key. All other keys keep their previously set colours.
@@ -1070,13 +1168,17 @@ public class KeyboardSession : IDisposable
 	/// <param name="b">Blue channel (0-255).</param>
 	/// <param name="brightness">Firmware brightness level (0-9, default 9 = maximum).</param>
 	/// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is not on this model.</exception>
-	public void SetKeyColor(DDKey key, byte r, byte g, byte b, byte brightness = 9)
+	public void SetKeyColor(DDKey key, byte r, byte g, byte b, [Range(0, 9)] byte brightness = 9)
 	{
 		EnsureNotPolling();
 		int gridIdx = GetKeyIndex(key);
 		_rgbProfile[gridIdx] = (r, g, b);
 		SendLightingPackets(BuildEntriesFromProfile(), brightness);
 	}
+
+	/// <inheritdoc cref="SetKeyColor(DDKey, byte, byte, byte, byte)"/>
+	public void SetKeyColor(DDKey key, RgbColor color, [Range(0, 9)] byte brightness = 9)
+		=> SetKeyColor(key, color.R, color.G, color.B, brightness);
 
 	/// <summary>
 	/// Sets the colour of one or more keys. All other keys keep their previously set colours.
@@ -1087,7 +1189,7 @@ public class KeyboardSession : IDisposable
 	/// <param name="b">Blue channel (0-255).</param>
 	/// <param name="brightness">Firmware brightness level (0-9, default 9 = maximum).</param>
 	/// <param name="keys">One or more keys to update.</param>
-	public void SetKeyColor(byte r, byte g, byte b, byte brightness = 9, params DDKey[] keys)
+	public void SetKeyColor(byte r, byte g, byte b, [Range(0, 9)] byte brightness = 9, params DDKey[] keys)
 	{
 		EnsureNotPolling();
 		if (keys.Length == 0)
@@ -1104,6 +1206,10 @@ public class KeyboardSession : IDisposable
 		SendLightingPackets(BuildEntriesFromProfile(), brightness);
 	}
 
+	/// <inheritdoc cref="SetKeyColor(byte, byte, byte, byte, DDKey[])"/>
+	public void SetKeyColor(RgbColor color, [Range(0, 9)] byte brightness = 9, params DDKey[] keys)
+		=> SetKeyColor(color.R, color.G, color.B, brightness, keys);
+
 	/// <summary>
 	/// Sets the colour of a single key by layout index. All other keys keep their previously
 	/// set colours. Use <see cref="GetKeyIndex"/> to map a <see cref="DDKey"/> to an index.
@@ -1113,7 +1219,7 @@ public class KeyboardSession : IDisposable
 	/// <param name="g">Green channel (0-255).</param>
 	/// <param name="b">Blue channel (0-255).</param>
 	/// <param name="brightness">Firmware brightness level (0-9, default 9 = maximum).</param>
-	public void SetKeyColor(int keyIndex, byte r, byte g, byte b, byte brightness = 9)
+	public void SetKeyColor(int keyIndex, byte r, byte g, byte b, [Range(0, 9)] byte brightness = 9)
 	{
 		EnsureNotPolling();
 		if ((uint)keyIndex >= (uint)_rgbProfile.Length)
@@ -1122,6 +1228,10 @@ public class KeyboardSession : IDisposable
 		_rgbProfile[keyIndex] = (r, g, b);
 		SendLightingPackets(BuildEntriesFromProfile(), brightness);
 	}
+
+	/// <inheritdoc cref="SetKeyColor(int, byte, byte, byte, byte)"/>
+	public void SetKeyColor(int keyIndex, RgbColor color, [Range(0, 9)] byte brightness = 9)
+		=> SetKeyColor(keyIndex, color.R, color.G, color.B, brightness);
 
 	/// <summary>
 	/// Activates a built-in firmware lighting animation by wire mode code.
@@ -1134,11 +1244,12 @@ public class KeyboardSession : IDisposable
 	/// </param>
 	/// <param name="brightness">Brightness level 0–9. Default 9.</param>
 	/// <param name="speed">Animation speed 0–9. Default 5.</param>
-	public void SetLightingMode(byte modeCode, byte brightness = 9, byte speed = 5)
+	public void SetLightingMode(LightingMode modeCode, [Range(0, 9)] byte brightness = 9, byte speed = 5)
 	{
 		EnsureNotPolling();
+		ValidateBrightness(brightness);
 		var resp = _connection.SendAndReceive(Protocol.SetLightingMode.Build(
-			slot: 0, modeCode, brightness, speed, tail: 0));
+			slot: 0, (byte)modeCode, brightness, speed, tail: 0));
 		if (resp is null || !RgbAcknowledge.Matches(resp))
 			throw new InvalidOperationException("No ACK for SetLightingMode.");
 	}
@@ -1238,7 +1349,7 @@ public class KeyboardSession : IDisposable
 	/// </summary>
 	/// <param name="profileIndex">Keyboard profile slot (0-based). Default: 0.</param>
 	/// <param name="brightness">Firmware brightness level (0-9, default 9 = maximum).</param>
-	internal void LoadLightingFromProfile(int profileIndex = 0, byte brightness = 9)
+	internal void LoadLightingFromProfile(int profileIndex = 0, [Range(0, 9)] byte brightness = 9)
 	{
 		EnsureNotPolling();
 		var raw = ReadExtendedGateway(0x0A, (ushort)(StoredColorStride * profileIndex), StoredColorByteCount);
@@ -1275,6 +1386,7 @@ public class KeyboardSession : IDisposable
 
 	private void SendLightingPackets(ReadOnlySpan<RgbEntry> entries, byte brightness)
 	{
+		ValidateBrightness(brightness);
 		const int EntriesPerPacket = 13;
 		int packetCount = (entries.Length + EntriesPerPacket - 1) / EntriesPerPacket;
 
@@ -1339,13 +1451,20 @@ public class KeyboardSession : IDisposable
 	}
 
 	/// <summary>
-	/// Configures the Rapid Trigger Auto Match sensitivity threshold.
-	/// Pass <c>255</c> to disable Auto Match; other values are firmware-defined sensitivity levels.
+	/// Enables Rapid Trigger Auto Match: the release threshold automatically mirrors the press threshold.
 	/// </summary>
-	public void ConfigureAutoMatchMode(byte mode)
+	/// <param name="sensitivity">Firmware sensitivity level (1–254). Lower values are more sensitive. Default: 1.</param>
+	public void EnableAutoMatch([Range(1, 254)] byte sensitivity = 1)
 	{
 		EnsureNotPolling();
-		_connection.Send(SetAutoMatchMode.Build(mode));
+		_connection.Send(SetAutoMatchMode.Build(sensitivity));
+	}
+
+	/// <summary>Disables Rapid Trigger Auto Match.</summary>
+	public void DisableAutoMatch()
+	{
+		EnsureNotPolling();
+		_connection.Send(SetAutoMatchMode.Build(255));
 	}
 
 	/// <summary>
@@ -1392,6 +1511,24 @@ public class KeyboardSession : IDisposable
 		var rawPairs = new (int, int)[pairs.Length];
 		for (int i = 0; i < pairs.Length; i++)
 			rawPairs[i] = (GetKeyIndex(pairs[i].keyA), GetKeyIndex(pairs[i].keyB));
+
+		ConfigureLastWinPairs(rawPairs);
+	}
+
+	/// <inheritdoc cref="ConfigureLastWinPairs(ValueTuple{DDKey, DDKey}[])"/>
+	/// <example>
+	/// <code>session.ConfigureLastWinPairs(new LastWinPair(DDKey.A, DDKey.D), new LastWinPair(DDKey.W, DDKey.S));</code>
+	/// </example>
+	public void ConfigureLastWinPairs(params LastWinPair[] pairs)
+	{
+		EnsureNotPolling();
+		if (pairs.Length > 14)
+			throw new ArgumentException(
+				$"Cannot configure {pairs.Length} last win pairs. The maximum allowed is 14.", nameof(pairs));
+
+		var rawPairs = new (int, int)[pairs.Length];
+		for (int i = 0; i < pairs.Length; i++)
+			rawPairs[i] = (GetKeyIndex(pairs[i].A), GetKeyIndex(pairs[i].B));
 
 		ConfigureLastWinPairs(rawPairs);
 	}
@@ -1527,7 +1664,7 @@ public class KeyboardSession : IDisposable
 	{
 		EnsureNotPolling();
 		var block = FetchFuncBlock();
-		block.MacMode = mode == KeyboardMode.Mac ? (byte)1 : (byte)0;
+		block.MacMode = (byte)KeyboardMode.Mac;
 		PushFuncBlock(block);
 	}
 
@@ -1625,18 +1762,15 @@ public class KeyboardSession : IDisposable
 	/// Activates a built-in firmware lighting animation. Use <see cref="SetLightCustom"/>
 	/// to switch back to per-key RGB set via <see cref="SetLighting"/>.
 	/// </summary>
-	/// <param name="effect">
-	/// Firmware animation preset index. Pass <c>0</c> to switch back to per-key custom RGB
-	/// (equivalent to <see cref="SetLightCustom"/>). Values 1 and above select built-in
-	/// animations; available presets vary by firmware version.
-	/// </param>
+	/// <param name="effect">Firmware animation preset. <see cref="LightPreset.Custom"/> switches back to per-key RGB.</param>
 	/// <param name="brightness">Brightness 0-9. Default 9.</param>
 	/// <param name="speed">Animation speed 0-9. Default 5.</param>
-	internal void SetLightPreset(byte effect, byte brightness = 9, byte speed = 5)
+	internal void SetLightPreset(LightPreset effect, byte brightness = 9, byte speed = 5)
 	{
 		EnsureNotPolling();
+		ValidateBrightness(brightness);
 		var block = FetchFuncBlock();
-		block.LightEffect     = effect;
+		block.LightEffect     = (byte)effect;
 		block.LightBrightness = brightness;
 		block.LightSpeed      = speed;
 		PushFuncBlock(block);
@@ -1670,6 +1804,8 @@ public class KeyboardSession : IDisposable
 		PushFuncBlock(block);
 	}
 
+	internal void SetLightPresetColor(RgbColor color) => SetLightPresetColor(color.R, color.G, color.B);
+
 	/// <summary>
 	/// Sets the firmware-internal sensor sampling tick rate (bits 4-7 of FuncBlock byte 4).
 	/// This controls how frequently the firmware polls sensors for rapid-trigger evaluation.
@@ -1687,19 +1823,17 @@ public class KeyboardSession : IDisposable
 	/// Activates a built-in firmware lighting animation on the logo light zone.
 	/// Only supported on models with a dedicated logo LED (see <see cref="HasLogoLight"/>).
 	/// </summary>
-	/// <param name="effect">
-	/// Firmware animation preset index. Pass <c>0</c> to turn the logo light off.
-	/// Values 1 and above select built-in animations; available presets vary by firmware version.
-	/// </param>
+	/// <param name="effect">Firmware animation preset. <see cref="LightPreset.Custom"/> turns the logo light off.</param>
 	/// <param name="brightness">Brightness 0-9. Default 9.</param>
 	/// <param name="speed">Animation speed 0-9. Default 5.</param>
 	/// <exception cref="NotSupportedException">Thrown when the connected model has no logo LED zone.</exception>
-	internal void SetLogoLightPreset(byte effect, byte brightness = 9, byte speed = 5)
+	internal void SetLogoLightPreset(LightPreset effect, byte brightness = 9, byte speed = 5)
 	{
 		EnsureNotPolling();
+		ValidateBrightness(brightness);
 		EnsureHasLogoLight();
 		var block = FetchFuncBlock();
-		block.LogoLightEffect     = effect;
+		block.LogoLightEffect     = (byte)effect;
 		block.LogoLightBrightness = brightness;
 		block.LogoLightSpeed      = speed;
 		PushFuncBlock(block);
@@ -1737,23 +1871,23 @@ public class KeyboardSession : IDisposable
 		PushFuncBlock(block);
 	}
 
+	internal void SetLogoLightColor(RgbColor color) => SetLogoLightColor(color.R, color.G, color.B);
+
 	/// <summary>
 	/// Activates a built-in firmware lighting animation on the side light zone.
 	/// Only supported on models with a dedicated side LED strip (see <see cref="HasSideLight"/>).
 	/// </summary>
-	/// <param name="effect">
-	/// Firmware animation preset index. Pass <c>0</c> to turn the side light off.
-	/// Values 1 and above select built-in animations; available presets vary by firmware version.
-	/// </param>
+	/// <param name="effect">Firmware animation preset. <see cref="LightPreset.Custom"/> turns the side light off.</param>
 	/// <param name="brightness">Brightness 0-9. Default 9.</param>
 	/// <param name="speed">Animation speed 0-9. Default 5.</param>
 	/// <exception cref="NotSupportedException">Thrown when the connected model has no side LED zone.</exception>
-	internal void SetSideLightPreset(byte effect, byte brightness = 9, byte speed = 5)
+	internal void SetSideLightPreset(LightPreset effect, byte brightness = 9, byte speed = 5)
 	{
 		EnsureNotPolling();
+		ValidateBrightness(brightness);
 		EnsureHasSideLight();
 		var block = FetchFuncBlock();
-		block.SideLightEffect     = effect;
+		block.SideLightEffect     = (byte)effect;
 		block.SideLightBrightness = brightness;
 		block.SideLightSpeed      = speed;
 		PushFuncBlock(block);
@@ -1790,6 +1924,8 @@ public class KeyboardSession : IDisposable
 		block.SideLightColorB = b;
 		PushFuncBlock(block);
 	}
+
+	internal void SetSideLightColor(RgbColor color) => SetSideLightColor(color.R, color.G, color.B);
 
 	//
 	// All 0x55 operations share the same envelope:
@@ -1849,6 +1985,13 @@ public class KeyboardSession : IDisposable
 			offset += len;
 			chunk++;
 		}
+	}
+
+	private static void ValidateBrightness(byte brightness)
+	{
+		if (brightness > 9)
+			throw new ArgumentOutOfRangeException(nameof(brightness), brightness,
+				"Brightness must be 0–9.");
 	}
 
 	private static byte SumBytes(ReadOnlySpan<byte> data)
@@ -2510,6 +2653,7 @@ public class KeyboardSession : IDisposable
 	internal void StartFastTransferMode()
 	{
 		EnsureNotPolling();
+		EnsureHasFuncBlock();
 		_connection.Send([0x55, 0x01]);
 		_inFastMode = true;
 	}
@@ -2521,6 +2665,7 @@ public class KeyboardSession : IDisposable
 	internal void StopFastTransferMode()
 	{
 		EnsureNotPolling();
+		EnsureHasFuncBlock();
 		if (!_inFastMode)
 		{
 			_log.Warning("{Method} called without a preceding {Prereq}; nothing sent",
@@ -2539,6 +2684,7 @@ public class KeyboardSession : IDisposable
 	internal void StartCalibration()
 	{
 		EnsureNotPolling();
+		EnsureHasFuncBlock();
 		_connection.Send([0x55, 0xA8]);
 	}
 
@@ -2549,6 +2695,7 @@ public class KeyboardSession : IDisposable
 	internal void EndCalibration()
 	{
 		EnsureNotPolling();
+		EnsureHasFuncBlock();
 		_connection.Send([0x55, 0xA9]);
 	}
 
@@ -2571,7 +2718,7 @@ public class KeyboardSession : IDisposable
 	internal void Reset()
 	{
 		EnsureNotPolling();
-		// Byte layout matches JS: sendDeviceData(85, [238, 0, 0, 1, 0, 0, 0, 255])
+		EnsureHasFuncBlock();
 		_connection.Send([0x55, 0xEE, 0, 0, 1, 0, 0, 0, 0xFF]);
 	}
 

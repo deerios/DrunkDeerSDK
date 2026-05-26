@@ -1,271 +1,312 @@
 # DrunkDeer SDK
 
-A .NET library for communicating with DrunkDeer analog keyboards over USB HID, plus a CLI tool for validating USB captures against the protocol implementation.
+A .NET library for communicating with DrunkDeer analog keyboards over USB HID.
 
-## Projects
-
-| Project | Description |
-|---|---|
-| `DrunkDeer` | Core SDK library |
-| `DrunkDeer.ProtocolAnalyzer` | CLI tool — validates USB captures against the protocol |
-| `DrunkDeer.CodeGen` | Source generator — regenerates `Generated/` from YAML + Scriban templates |
-| `DrunkDeer.FeatureTests` | Integration tests against a real connected keyboard |
-| `DrunkDeer.ProtocolTests` | Unit tests for generated protocol message structures |
-
-## Quick Start
+## Quick start
 
 ```csharp
 using DrunkDeer.Protocol;
 
-// Opens the first detected DrunkDeer keyboard, performs the identity handshake.
-using var session = KeyboardSession.OpenFirst();
+using var session = KeyboardSession<A75>.OpenFirst(); // Change `A75` to the model of your keyboard.
 
 Console.WriteLine($"{session.Model.Name}  fw{session.FirmwareVersion}  {session.PrecisionMode}");
 
-// React to key events from the background poll loop.
-session.KeyDown    += (_, e) => Console.WriteLine($"Key Down: {e.KeyIndex}  depth={session.GetKeyHeightMm(e.KeyIndex):F2}mm");
-session.KeyUp      += (_, e) => Console.WriteLine($"Key Up: {e.KeyIndex}");
-session.KeyPressed += (_, e) => Console.WriteLine($"Key Press: {e.KeyIndex}");
+session.KeyDown    += (_, e) => Console.WriteLine($"↓ {e.Index}  {session.GetKeyHeightMm(e.Index):F2}mm");
+session.KeyUp      += (_, e) => Console.WriteLine($"↑ {e.Index}");
+session.KeyPressed += (_, e) => Console.WriteLine($"  {e.Index}");
 
 session.StartPolling();
 Console.ReadLine();
-session.StopPolling();
 ```
 
-## Features
+## Model overview
 
-### Key travel events
+DrunkDeer keyboards fall into two tiers. **Programmable models** expose the full firmware surface — key remapping, macros, lighting presets, firmware profile management, and per-key trigger configuration stored in on-board flash. All other models support actuation control, Rapid Trigger, and live RGB lighting.
 
-`KeyboardSession` runs a background poll loop and raises events based on configurable thresholds:
+| Model | Precision | Programmable | Berserk | Logo light | Side light |
+|---|---|---|---|---|---|
+| A75, A75 Pro, G75, G75 Jp, G65, G65 Lite, G60 | Standard / Kun | — | — | — | — |
+| G65 M1/M2/M3, G60 V600 | Kun | ✓ | ✓ | — | — |
+| A75 Ultra | FD | ✓ | ✓ | ✓ | — |
+| A75 Master | FD | ✓ | ✓ | — | — |
+| X60 Future | FD | ✓ | ✓ | — | ✓ |
+
+**Capability interfaces** are used as compile-time type constraints on `KeyboardSession<TModel>`. A method only appears in IntelliSense when the model type implements the required interface.
+
+| Interface | Gates |
+|---|---|
+| `IHasFuncBlock` | All programmable-model features |
+| `IHasHighPrecision` | FD 0.005 mm precision + actuation read-back |
+| `IHasBerserkMode` | Berserk / Tachyon mode |
+| `IHasLogoLight` | Logo LED zone |
+| `IHasSideLight` | Side LED strip |
 
 ```csharp
-session.PressThresholdMm   = 1.0f;   // depth that fires KeyDown (default 1.0mm)
-session.ReleaseThresholdMm = 0.5f;   // depth that fires KeyUp   (default 0.5mm)
+// Typed — only the methods your model supports appear in IntelliSense
+using var session = KeyboardSession<A75Ultra>.OpenFirst();
 
-session.KeyHeightChanged += (_, e) => { /* fires every poll cycle on change */ };
+// Untyped — for code that doesn't know the model at compile time
+using var session = KeyboardSession.OpenFirst();
+// Polling, key events, actuation, and live RGB are available on all models
+```
+
+## Key events
+
+```csharp
+session.PressThresholdMm   = 1.0f;  // depth that fires KeyDown   (default 1.0 mm)
+session.ReleaseThresholdMm = 0.5f;  // depth that fires KeyUp     (default 0.5 mm)
+
+session.KeyHeightChanged += (_, e) => { /* fires every poll cycle when depth changes */ };
 session.KeyDown          += (_, e) => { };
 session.KeyUp            += (_, e) => { };
 session.KeyPressed       += (_, e) => { /* fires simultaneously with KeyUp */ };
 session.Polled           += (_, e) => { /* fires once per complete poll cycle */ };
 
 // Read current depth without waiting for an event
-float mm = session.GetKeyHeightMm(DDKey.Space);
-float[] allKeyHeights = session.GetAllKeyHeightsMm();
+float mm      = session.GetKeyHeightMm(DDKey.Space);
+float[] all   = session.GetAllKeyHeightsMm();
+IReadOnlyDictionary<DDKey, float> byKey = session.GetAllKeyHeightsMmByKey();
+bool pressed  = session.IsKeyPressed(DDKey.W);
 ```
 
-Configuration methods require `StopPolling()` first — they throw if called while the loop is running.
+> Configuration methods require polling to be stopped — an exception is thrown if called while actively polling.
 
-### Actuation, downstroke, and upstroke points
+## Actuation, downstroke, and upstroke
 
 ```csharp
-// Uniform depth for all keys
+// Uniform — all keys
 session.SetActuationPoint(1.5f);
-
-// Per-key array (length == session.TotalKeyCount)
-session.SetActuationPoint(new float[session.TotalKeyCount]);
+session.SetDownstrokePoint(0.2f);
+session.SetUpstrokePoint(0.1f);
 
 // Named keys only, all others unchanged
 session.SetActuationPoint(0.2f, DDKey.W, DDKey.A, DDKey.S, DDKey.D);
 
-// Same overloads for downstroke and upstroke:
-session.SetDownstrokePoint(2.0f);
-session.SetUpstrokePoint(1.8f);
+// Per-key with a fluent profile
+session.SetActuationPoints(new KeyDepthProfileBuilder()
+    .Default(2.0f)
+    .Keys([DDKey.W, DDKey.A, DDKey.S, DDKey.D], 0.2f)
+    .Build());
 
-// Read back (high-precision models only)
-float[] ap = session.ReadActuationPoint();
+// Read back current depths (FD precision models only — IHasHighPrecision)
+using var session = KeyboardSession<A75Ultra>.OpenFirst();
+float[] depths                          = session.ReadActuationPoint();
+IReadOnlyDictionary<DDKey, float> byKey = session.ReadActuationPointByKey();
+// ReadDownstrokePoint / ReadDownstrokePointByKey and ReadUpstrokePoint / ReadUpstrokePointByKey follow the same pattern.
 ```
 
 Valid range: `session.MinDepthMm` – `session.MaxDepthMm`.
 
-### RGB lighting
+## RGB lighting
 
 ```csharp
-// Uniform colour
-session.SetUniformLighting(r: 255, g: 0, b: 0);
+// Uniform colour — raw channels or RgbColor struct
+session.SetUniformLighting(r: 0, g: 100, b: 255);
+session.SetUniformLighting(new RgbColor(0, 100, 255));
 
-// Per-key callback
-session.SetLighting(gridIdx => gridIdx % 2 == 0 ? (255, 0, 0) : (0, 0, 255));
+// Per-key via callback
+session.SetLighting(idx => idx % 2 == 0 ? (255, 0, 0) : (0, 0, 255));
 
-// Single key, preserving all other colours
+// Single key, all others preserved
 session.SetKeyColor(DDKey.Escape, r: 255, g: 165, b: 0);
+session.SetKeyColor(DDKey.Escape, new RgbColor(255, 165, 0));
 
-// Built-in firmware animation preset (0 = custom RGB)
-// Check HasFuncBlock first — throws NotSupportedException on unsupported models.
-if (session.HasFuncBlock)
-{
-    session.SetLightPreset(effect: 3, brightness: 7, speed: 4);
-    session.SetLightCustom();   // return to per-key RGB
+session.DisableLighting();
 
-    // Flash persistence
-    session.SaveLightingToProfile(profileIndex: 0);
-    session.LoadLightingFromProfile(profileIndex: 0);
-    session.DisableLighting();
-}
+// Built-in animation presets (all models)
+session.SetLightingMode(LightingMode.CenterSurfing, brightness: 5, speed: 4);
+session.SetLightingMode(LightingMode.Breath, brightness: 9, speed: 2);
+// Available modes: RotateMarquee, AlwaysLight, Spectrum, Breath, LightByPress, Stars,
+//   WaveSpectrum, CenterSurfing, SurfingDown, Ripple, GlowingFish, ColorfulFountain,
+//   Traffic, GluttonousSnake, RepeatSurfing, SurfingCross, LaserKey, RandomFountain
 ```
 
-Logo and side light zones are available on supported models (`session.HasLogoLight`, `session.HasSideLight`).
+### Firmware animation presets (programmable models)
 
-### Rapid Trigger, Last Win, Turbo/Berserk
+```csharp
+using var session = KeyboardSession<A75Ultra>.OpenFirst();
+
+// Activate a named preset
+session.SetLightPreset(LightPreset.CenterSurfing, brightness: 7, speed: 4);
+
+// Optional single-colour tint for presets that support it
+session.SetLightPresetColor(new RgbColor(0, 200, 255));
+
+// Return to per-key custom RGB
+session.SetLightCustom();
+
+// Persist in-memory colours to on-board flash and restore later
+session.SaveLightingToProfile(profileIndex: 0);
+session.LoadLightingFromProfile(profileIndex: 0);
+```
+
+### Logo and side light zones
+
+```csharp
+using var session = KeyboardSession<A75Ultra>.OpenFirst();  // IHasLogoLight
+session.SetLogoLightPreset(LightPreset.Breath, brightness: 7);
+session.SetLogoLightColor(new RgbColor(255, 0, 128));
+session.SetLogoLightOff();
+
+using var session = KeyboardSession<X60Future>.OpenFirst();  // IHasSideLight
+session.SetSideLightPreset(LightPreset.Spectrum);
+session.SetSideLightColor(r: 0, g: 200, b: 255);
+```
+
+### RGB to a JSON file (all models)
+
+```csharp
+// Build a theme and save to file
+var profile = new KeyboardProfile
+{
+    Theme = new KeyboardThemeBuilder()
+        .Base(0, 0, 40)
+        .Brightness(9)
+        .Keys([DDKey.W, DDKey.A, DDKey.S, DDKey.D], 255, 140, 0)
+        .Build()
+};
+profile.SaveToFile("my_theme.json");
+
+// Load and apply later
+var saved = KeyboardProfile.FromFile("my_theme.json");
+session.ApplyProfile(saved);
+```
+
+## Rapid Trigger, Turbo, and Last Win
 
 ```csharp
 session.EnableRapidTrigger(autoMatch: true);
 session.DisableRapidTrigger();
-
 session.EnableTurboMode();
 session.DisableTurboMode();
-
-// Berserk mode: every held key re-fires at the polling rate (auto-fire).
-// Check HasBerserkMode first — throws NotSupportedException on unsupported models.
-if (session.HasBerserkMode)
-    session.EnableBerserkMode();
-
 session.SetLastWinRapidTriggerMode(LastWinRapidTriggerMode.Both);
+session.ConfigureLastWinReplace(enabled: true);
+
+// Last Win key pairs — whichever was pressed most recently wins
 session.ConfigureLastWinPairs((DDKey.A, DDKey.D), (DDKey.Q, DDKey.E));
+session.ConfigureLastWinPairs(new LastWinPair(DDKey.A, DDKey.D), new LastWinPair(DDKey.W, DDKey.S));
+
+// Auto Match — release threshold automatically mirrors the press threshold
+session.EnableAutoMatch(sensitivity: 1);
+session.DisableAutoMatch();
 ```
 
-### Global settings
+### Berserk mode (`IHasBerserkMode` models)
+
+Every held key re-fires at the polling rate for as long as it is held (auto-fire / Tachyon mode).
 
 ```csharp
-session.SetReportRate(ReportRate.Hz1000);
-session.SetKeyboardMode(KeyboardMode.Mac);
-session.SetDebounce(level: 2);       // 0-7
-session.SetStabilityMode(level: 1);  // 0-3
-session.ConfigureKeyLocks(winLock: true, altTabLock: false);
+using var session = KeyboardSession<G65M1>.OpenFirst();
+session.EnableBerserkMode();
+session.DisableBerserkMode();
 ```
 
-### Profiles
+## Programmable models
+
+The sections below require a programmable model (`IHasFuncBlock`): G65 M1/M2/M3, G60 V600, A75 Ultra, A75 Master, X60 Future.
+
+### Global keyboard settings
+
+```csharp
+using var session = KeyboardSession<A75Ultra>.OpenFirst();
+
+session.SetReportRate(ReportRate.Hz1000);
+session.SetKeyboardMode(KeyboardMode.Mac);
+session.SetDebounce(level: 2);       // 0–7
+session.SetStabilityMode(level: 1);  // 0–3
+session.ConfigureKeyLocks(winLock: true, altTabLock: false);
+session.SetTickRate(rate: 8);
+```
+
+### Key remapping
+
+```csharp
+// Remap a single key (3-byte write — no read required)
+session.SetKey(DDKey.CapsLock, new UserKey { Type = 0x04, Param1 = 0x29 }); // → Esc
+
+// Read / write an entire layer
+UserKey[] layer0 = session.ReadKeyMap(layerIndex: 0);
+session.WriteKeyMap(layer0, layerIndex: 0);
+```
+
+### Per-key trigger configuration
+
+```csharp
+KeyTriggerConfig[] triggers = session.ReadKeyTriggers();
+session.SetKeyTrigger(DDKey.Space, new KeyTriggerConfig { Actuation = 150 });
+session.WriteKeyTriggers(triggers);
+```
+
+### Firmware profile slots
+
+```csharp
+FullProfileData data = session.PullFullProfile(profileIndex: 0);
+session.PushFullProfile(data, profileIndex: 1);
+session.CopyProfile(fromSlot: 0, toSlot: 1);
+session.SwitchProfile(profileIndex: 1);
+int active = session.GetCurrentProfile();
+```
+
+### Macros, DKS, Multi-Tap, Toggle
+
+```csharp
+// Dynamic Keystroke — different bindings at different press depths
+DynamicKeystrokeEntry[] dks = session.ReadDynamicKeystrokeEntries();
+session.SetDynamicKeystrokeEntry(slotIndex: 0, entry);
+
+// Multi-Tap — different action per tap count
+MultiTapEntry[] mt = session.ReadMultiTapEntries();
+session.SetMultiTapEntry(slotIndex: 0, entry);
+
+// Toggle keys and macros
+session.SetToggleKeyEntry(slotIndex: 0, new UserKey { ... });
+MacroAction[][] macros = session.ReadMacroSlots();
+session.SetMacroSlot(slotIndex: 0, actions);
+```
+
+## Keyboard profiles
+
+`KeyboardProfile` is a serialisable snapshot. Only non-null fields are applied — set a section to `null` to leave that part of the keyboard unchanged.
 
 ```csharp
 var profile = new KeyboardProfile
 {
-    ActuationMm  = 1.5f,
+    Actuation    = new KeyDepthProfileBuilder()
+                       .Default(2.0f)
+                       .Keys([DDKey.W, DDKey.A, DDKey.S, DDKey.D], 0.2f)
+                       .Build(),
     RapidTrigger = true,
-    Theme        = new KeyboardTheme { R = 0, G = 100, B = 255, Brightness = 8 },
-    PerKeyActuationMm = new Dictionary<string, float> { ["W"] = 0.3f, ["Space"] = 1.0f },
+    Theme        = new KeyboardThemeBuilder()
+                       .Base(0, 100, 255)
+                       .Brightness(8)
+                       .Build(),
 };
+
 session.ApplyProfile(profile);
-```
 
-### Testing with FakeKeyboardConnection
+// Snapshot the current keyboard state
+KeyboardProfile captured = session.CaptureProfile();
+captured.SaveToFile("profile.json");
 
-`IKeyboardConnection` is the seam for testing. `FakeKeyboardConnection` implements it in-process without a physical keyboard.
-
-```csharp
-using var session = new KeyboardSession(new FakeKeyboardConnection(ModelRegistry.A75));
+// Round-trip from JSON
+var loaded = KeyboardProfile.FromFile("profile.json");
+session.ApplyProfile(loaded);
 ```
 
 ## Precision modes
 
 | Mode | Resolution | Models |
 |---|---|---|
-| `Standard` | 0.1 mm | A75, A75Pro, G75, G65, G60, … |
-| `Kun` | 0.01 mm | G65 m1/m2/m3, G60 v600, standard models on newer firmware |
-| `FD` (high-precision) | 0.005 mm | A75 Ultra, A75 Master, X60 Future |
+| `Standard` | 0.1 mm | A75, A75 Pro, G75, G65, G60, … |
+| `Kun` | 0.01 mm | G65 M1/M2/M3, G60 V600, and standard models on newer firmware |
+| `FD` | 0.005 mm | A75 Ultra, A75 Master, X60 Future |
 
 `session.PrecisionMode` reports the active mode. Actuation read-back and high-precision key-point writes are only available in `FD` mode.
 
-## Code generation
+## Further reading
 
-Protocol message code in `DrunkDeer/Generated/` is auto-generated — never edit those files directly. To add a capability or model:
+Additional documentation is available on the [GitHub Wiki](../../wiki):
 
-1. Edit `DrunkDeer/protocol/models.yaml`
-2. Edit `DrunkDeer/Templates/Models.sbn`
-3. Update `DrunkDeer.CodeGen/Generator.cs`
-4. Run: `cd DrunkDeer.CodeGen && dotnet run -- "../DrunkDeer/protocol" "../DrunkDeer/Generated"`
-5. Build: `cd DrunkDeer && dotnet build`
-
----
-
-## ProtocolAnalyzer
-
-`DrunkDeer.ProtocolAnalyzer` is a CLI tool that validates USB HID traffic against the protocol implementation. It reads Wireshark captures or captures live from a USBPcap interface and writes an NDJSON log.
-
-### Usage
-
-```
-ProtocolAnalyzer --pcap <capture.pcap|.pcapng> [options]   # analyze a Wireshark capture
-ProtocolAnalyzer --live <interface>            [options]   # live USB capture via USBPcap
-ProtocolAnalyzer --list-interfaces                         # show available USBPcap interfaces
-```
-
-**Options:**
-
-| Flag | Description |
-|---|---|
-| `--pcap <file>` | Path to `.pcap` or `.pcapng` captured with Wireshark + USBPcap (link type 249) |
-| `--live <interface>` | USBPcap interface, e.g. `\\.\USBPcap1` |
-| `--output <file>` | NDJSON output path (default: `<pcap-stem>-analysis.ndjson` or `capture-<ts>.ndjson`) |
-| `--firmware <tag>` | Label for the firmware version in the log, e.g. `fw13` |
-| `--device <bus.addr>` | Filter to one USB device, e.g. `1.5` |
-| `--list-interfaces` | List available USBPcap interfaces and exit |
-
-### Live capture requirements
-
-- [Npcap](https://npcap.com/) installed with **USBPcap support** enabled
-- USBPcap: installed alongside Npcap or Wireshark
-- `USBPcapCMD.exe` present at `C:\Program Files\USBPcap\USBPcapCMD.exe`
-- The SDK (`TestApp` or `DrunkDeer Antler` web interface) must be running while capturing — normal key presses use the standard HID interface and are ignored by the analyzer
-
-Find your interface:
-
-```
-ProtocolAnalyzer --list-interfaces
-```
-
-Then capture while running the SDK:
-
-```
-ProtocolAnalyzer --live \\.\USBPcap2 --firmware fw13
-```
-
-### PCAP file mode
-
-Capture in Wireshark with USBPcap enabled (link type 249). If you don't pass `--device`, the tool shows a device inventory first so you can pick the right `bus.addr`:
-
-```
-ProtocolAnalyzer --pcap capture.pcapng
-# Found 3 USB devices. Use --device bus.addr to restrict analysis:
-#     2.15   4821 interrupt packets
-#     ...
-
-ProtocolAnalyzer --pcap capture.pcapng --device 2.15 --firmware fw13
-```
-
-### Output format (NDJSON)
-
-Each line is a self-contained JSON object with a `type` discriminator:
-
-| `type` | Description |
-|---|---|
-| `session` | Analysis parameters and timestamp |
-| `packet` | Each HID interrupt packet: direction, hex payload, message name, `structural_ok`, `sequence_failure`, extracted fields |
-| `summary` | Aggregate stats, device inventory, firmware-field snapshot |
-
-**Quick queries with `jq`:**
-
-```sh
-# All structural failures
-jq 'select(.structural_ok == false)' capture-analysis.ndjson
-
-# Sequence mismatches (OUT→IN opcode mismatch)
-jq 'select(.sequence_failure != null)' capture-analysis.ndjson
-
-# Firmware-sensitive fields (for version comparison)
-jq 'select(.type=="summary") | .firmware_fields' capture-analysis.ndjson
-```
-
-### Firmware comparison workflow
-
-Run captures on two firmware versions with matching `--firmware` tags:
-
-```
-ProtocolAnalyzer --pcap fw12.pcap --firmware fw12 --device 2.15
-ProtocolAnalyzer --pcap fw13.pcap --firmware fw13 --device 2.15
-```
-
-Then diff the `firmware_fields` entries from the two summary lines:
-
-```sh
-jq 'select(.type=="summary") | .firmware_fields' fw12-analysis.ndjson
-jq 'select(.type=="summary") | .firmware_fields' fw13-analysis.ndjson
-```
+- **[Testing](../../wiki/Testing)** — using `FakeKeyboardConnection` to write tests without a physical keyboard
+- **[Protocol Analyzer](../../wiki/ProtocolAnalyzer)** — validating USB captures against the protocol implementation
+- **[Code Generation](../../wiki/CodeGen)** — regenerating `Generated/` from YAML + Scriban templates when adding new models or capabilities

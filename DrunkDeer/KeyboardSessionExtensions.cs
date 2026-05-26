@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace DrunkDeer.Protocol;
 
 /// <summary>
@@ -35,7 +37,7 @@ public static class KeyboardSessionExtensions
 
     /// <summary>Activates a built-in firmware lighting animation preset.</summary>
     public static void SetLightPreset<T>(this KeyboardSession<T> s,
-        byte effect, byte brightness = 9, byte speed = 5)
+        LightPreset effect, [Range(0, 9)] byte brightness = 9, byte speed = 5)
         where T : IHasFuncBlock => s.SetLightPreset(effect, brightness, speed);
 
     /// <summary>Switches lighting back to custom RGB mode.</summary>
@@ -45,6 +47,10 @@ public static class KeyboardSessionExtensions
     /// <summary>Sets the single-colour tint used by the main key preset lighting effect.</summary>
     public static void SetLightPresetColor<T>(this KeyboardSession<T> s, byte r, byte g, byte b)
         where T : IHasFuncBlock => s.SetLightPresetColor(r, g, b);
+
+    /// <inheritdoc cref="SetLightPresetColor{T}(KeyboardSession{T}, byte, byte, byte)"/>
+    public static void SetLightPresetColor<T>(this KeyboardSession<T> s, RgbColor color)
+        where T : IHasFuncBlock => s.SetLightPresetColor(color);
 
     /// <summary>Sets the firmware sensor sampling tick rate (bits 4-7, values 0-15).</summary>
     public static void SetTickRate<T>(this KeyboardSession<T> s, byte rate)
@@ -197,7 +203,7 @@ public static class KeyboardSessionExtensions
 
     /// <summary>Loads the stored per-key colours for the specified profile from flash and applies them live.</summary>
     public static void LoadLightingFromProfile<T>(this KeyboardSession<T> s,
-        int profileIndex = 0, byte brightness = 9)
+        int profileIndex = 0, [Range(0, 9)] byte brightness = 9)
         where T : IHasFuncBlock => s.LoadLightingFromProfile(profileIndex, brightness);
 
     /// <summary>Reads the currently displayed per-key RGB colours from the keyboard regardless of the active lighting effect.</summary>
@@ -224,6 +230,34 @@ public static class KeyboardSessionExtensions
     public static void Reset<T>(this KeyboardSession<T> s)
         where T : IHasFuncBlock => s.Reset();
 
+    // ── IHasHighPrecision ────────────────────────────────────────────────────
+    // FD × 200 (0.005 mm/unit) models: A75 Ultra, A75 Master, X60 Future.
+    // These are the only models that support read-back of stored key-point profiles.
+
+    /// <summary>Reads the per-key actuation point profile from the keyboard, returning one depth in mm per key slot.</summary>
+    public static float[] ReadActuationPoint<T>(this KeyboardSession<T> s)
+        where T : IHasHighPrecision => s.ReadActuationPoint();
+
+    /// <summary>Reads the per-key actuation point profile, keyed by <see cref="DDKey"/>.</summary>
+    public static IReadOnlyDictionary<DDKey, float> ReadActuationPointByKey<T>(this KeyboardSession<T> s)
+        where T : IHasHighPrecision => s.ToKeyDictionary(s.ReadActuationPoint());
+
+    /// <summary>Reads the per-key downstroke point profile from the keyboard, returning one depth in mm per key slot.</summary>
+    public static float[] ReadDownstrokePoint<T>(this KeyboardSession<T> s)
+        where T : IHasHighPrecision => s.ReadDownstrokePoint();
+
+    /// <summary>Reads the per-key downstroke point profile, keyed by <see cref="DDKey"/>.</summary>
+    public static IReadOnlyDictionary<DDKey, float> ReadDownstrokePointByKey<T>(this KeyboardSession<T> s)
+        where T : IHasHighPrecision => s.ToKeyDictionary(s.ReadDownstrokePoint());
+
+    /// <summary>Reads the per-key upstroke point profile from the keyboard, returning one depth in mm per key slot.</summary>
+    public static float[] ReadUpstrokePoint<T>(this KeyboardSession<T> s)
+        where T : IHasHighPrecision => s.ReadUpstrokePoint();
+
+    /// <summary>Reads the per-key upstroke point profile, keyed by <see cref="DDKey"/>.</summary>
+    public static IReadOnlyDictionary<DDKey, float> ReadUpstrokePointByKey<T>(this KeyboardSession<T> s)
+        where T : IHasHighPrecision => s.ToKeyDictionary(s.ReadUpstrokePoint());
+
     // ── IHasBerserkMode ──────────────────────────────────────────────────────
 
     /// <summary>
@@ -240,7 +274,7 @@ public static class KeyboardSessionExtensions
 
     /// <summary>Activates a built-in firmware lighting animation on the logo light zone.</summary>
     public static void SetLogoLightPreset<T>(this KeyboardSession<T> s,
-        byte effect, byte brightness = 9, byte speed = 5)
+        LightPreset effect, [Range(0, 9)] byte brightness = 9, byte speed = 5)
         where T : IHasLogoLight => s.SetLogoLightPreset(effect, brightness, speed);
 
     /// <summary>Turns off the logo light zone.</summary>
@@ -251,11 +285,15 @@ public static class KeyboardSessionExtensions
     public static void SetLogoLightColor<T>(this KeyboardSession<T> s, byte r, byte g, byte b)
         where T : IHasLogoLight => s.SetLogoLightColor(r, g, b);
 
+    /// <inheritdoc cref="SetLogoLightColor{T}(KeyboardSession{T}, byte, byte, byte)"/>
+    public static void SetLogoLightColor<T>(this KeyboardSession<T> s, RgbColor color)
+        where T : IHasLogoLight => s.SetLogoLightColor(color);
+
     // ── IHasSideLight ────────────────────────────────────────────────────────
 
     /// <summary>Activates a built-in firmware lighting animation on the side light zone.</summary>
     public static void SetSideLightPreset<T>(this KeyboardSession<T> s,
-        byte effect, byte brightness = 9, byte speed = 5)
+        LightPreset effect, [Range(0, 9)] byte brightness = 9, byte speed = 5)
         where T : IHasSideLight => s.SetSideLightPreset(effect, brightness, speed);
 
     /// <summary>Turns off the side light zone.</summary>
@@ -265,4 +303,8 @@ public static class KeyboardSessionExtensions
     /// <summary>Sets the single-colour tint used by the side light preset effect.</summary>
     public static void SetSideLightColor<T>(this KeyboardSession<T> s, byte r, byte g, byte b)
         where T : IHasSideLight => s.SetSideLightColor(r, g, b);
+
+    /// <inheritdoc cref="SetSideLightColor{T}(KeyboardSession{T}, byte, byte, byte)"/>
+    public static void SetSideLightColor<T>(this KeyboardSession<T> s, RgbColor color)
+        where T : IHasSideLight => s.SetSideLightColor(color);
 }
