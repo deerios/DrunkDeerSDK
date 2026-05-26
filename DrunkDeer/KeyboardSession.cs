@@ -1,4 +1,5 @@
-﻿using Serilog;
+﻿using System.Runtime.CompilerServices;
+using Serilog;
 using System.Buffers.Binary;
 using System.Diagnostics;
 
@@ -630,7 +631,7 @@ public class KeyboardSession : IDisposable
 	/// <param name="depthsMm">
 	/// One depth (mm) per key. Length must equal <see cref="TotalKeyCount"/>.
 	/// </param>
-	public void SetActuationPoint(float[] depthsMm)
+	internal void SetActuationPoint(float[] depthsMm)
 	{
 		EnsureNotPolling();
 		SetKeyPointPerKey(depthsMm,
@@ -681,7 +682,7 @@ public class KeyboardSession : IDisposable
 
 	/// <summary>Sets per-key downstroke depths.</summary>
 	/// <param name="depthsMm">One depth (mm) per key. Length must equal <see cref="TotalKeyCount"/>.</param>
-	public void SetDownstrokePoint(float[] depthsMm)
+	internal void SetDownstrokePoint(float[] depthsMm)
 	{
 		EnsureNotPolling();
 		SetKeyPointPerKey(depthsMm,
@@ -727,7 +728,7 @@ public class KeyboardSession : IDisposable
 
 	/// <summary>Sets per-key upstroke depths.</summary>
 	/// <param name="depthsMm">One depth (mm) per key. Length must equal <see cref="TotalKeyCount"/>.</param>
-	public void SetUpstrokePoint(float[] depthsMm)
+	internal void SetUpstrokePoint(float[] depthsMm)
 	{
 		EnsureNotPolling();
 		SetKeyPointPerKey(depthsMm,
@@ -758,6 +759,37 @@ public class KeyboardSession : IDisposable
 		SetKeyPointPerKey(_upstrokeProfile,
 			(idx, vals) => WriteUpstrokePointStandard.Build(idx, vals),
 			(sec, data) => WriteUpstrokePointHighPrecision.Build((byte)sec, data));
+	}
+
+	/// <summary>Sets per-key actuation depths from a <see cref="KeyDepthProfile"/>.</summary>
+	public void SetActuationPoints(KeyDepthProfile profile) =>
+		SetActuationPoint(BuildDepthArray(profile));
+
+	/// <summary>Sets per-key downstroke depths from a <see cref="KeyDepthProfile"/>.</summary>
+	public void SetDownstrokePoints(KeyDepthProfile profile) =>
+		SetDownstrokePoint(BuildDepthArray(profile));
+
+	/// <summary>Sets per-key upstroke depths from a <see cref="KeyDepthProfile"/>.</summary>
+	public void SetUpstrokePoints(KeyDepthProfile profile) =>
+		SetUpstrokePoint(BuildDepthArray(profile));
+
+	private float[] BuildDepthArray(KeyDepthProfile profile, [CallerMemberName] string callerName = "")
+	{
+		var depths = new float[TotalKeyCount];
+		Array.Fill(depths, profile.Default);
+		if (profile.Keys != null)
+		{
+			foreach (var (name, depthMm) in profile.Keys)
+			{
+				if (!Enum.TryParse<DDKey>(name, ignoreCase: true, out var key) || !TryGetKeyIndex(key, out int idx))
+				{
+					_log.Warning("{Method}: unknown key '{Key}'; skipped.", callerName, name);
+					continue;
+				}
+				depths[idx] = depthMm;
+			}
+		}
+		return depths;
 	}
 
 	/// <summary>
@@ -1412,35 +1444,14 @@ public class KeyboardSession : IDisposable
 
 		if (!profile.IsThemeOnly)
 		{
-			if (profile.ActuationMm.HasValue || profile.PerKeyActuationMm != null)
-			{
-				var target = (float[])_actuationProfile.Clone();
-				if (profile.ActuationMm.HasValue)
-					Array.Fill(target, profile.ActuationMm.Value);
-				if (profile.PerKeyActuationMm != null)
-					ApplyPerKeyDepth(target, profile.PerKeyActuationMm, "PerKeyActuationMm");
-				SetActuationPoint(target);
-			}
+			if (profile.Actuation != null)
+				SetActuationPoint(BuildDepthArray(profile.Actuation));
 
-			if (profile.DownstrokeMm.HasValue || profile.PerKeyDownstrokeMm != null)
-			{
-				var target = (float[])_downstrokeProfile.Clone();
-				if (profile.DownstrokeMm.HasValue)
-					Array.Fill(target, profile.DownstrokeMm.Value);
-				if (profile.PerKeyDownstrokeMm != null)
-					ApplyPerKeyDepth(target, profile.PerKeyDownstrokeMm, "PerKeyDownstrokeMm");
-				SetDownstrokePoint(target);
-			}
+			if (profile.Downstroke != null)
+				SetDownstrokePoint(BuildDepthArray(profile.Downstroke));
 
-			if (profile.UpstrokeMm.HasValue || profile.PerKeyUpstrokeMm != null)
-			{
-				var target = (float[])_upstrokeProfile.Clone();
-				if (profile.UpstrokeMm.HasValue)
-					Array.Fill(target, profile.UpstrokeMm.Value);
-				if (profile.PerKeyUpstrokeMm != null)
-					ApplyPerKeyDepth(target, profile.PerKeyUpstrokeMm, "PerKeyUpstrokeMm");
-				SetUpstrokePoint(target);
-			}
+			if (profile.Upstroke != null)
+				SetUpstrokePoint(BuildDepthArray(profile.Upstroke));
 
 			if (profile.RapidTrigger.HasValue)
 			{
@@ -2255,7 +2266,7 @@ public class KeyboardSession : IDisposable
 	/// </summary>
 	public const int ProfileCount = 4;
 
-	private static void ValidateProfileIndex(int profileIndex, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
+	private static void ValidateProfileIndex(int profileIndex, [CallerMemberName] string caller = "")
 	{
 		if ((uint)profileIndex >= ProfileCount)
 			throw new ArgumentOutOfRangeException(nameof(profileIndex),
@@ -2379,12 +2390,11 @@ public class KeyboardSession : IDisposable
 
 		KeyboardFuncBlock? funcBlock = HasFuncBlock ? FetchFuncBlock(profileIndex) : null;
 
-		float? uniformActuationMm = null, uniformDownstrokeMm = null, uniformUpstrokeMm = null;
-		Dictionary<string, float>? perKeyActuationMm = null, perKeyDownstrokeMm = null, perKeyUpstrokeMm = null;
+		KeyDepthProfile? actuation = null, downstroke = null, upstroke = null;
 
 		if (HasFuncBlock)
 		{
-			var triggers = ReadKeyTriggers(profileIndex);
+			var triggers   = ReadKeyTriggers(profileIndex);
 			var indexToKey = _keyIndexMap.ToDictionary(kv => kv.Value, kv => kv.Key);
 
 			var actuations  = new Dictionary<int, float>(_keyIndexMap.Count);
@@ -2409,7 +2419,7 @@ public class KeyboardSession : IDisposable
 				return map.Values.All(v => MathF.Abs(v - first) < 0.05f);
 			}
 
-			Dictionary<string, float>? BuildPerKeyMap(Dictionary<int, float> source)
+			Dictionary<string, float> BuildPerKeyMap(Dictionary<int, float> source)
 			{
 				var result = new Dictionary<string, float>(source.Count, StringComparer.OrdinalIgnoreCase);
 				foreach (var (idx, mm) in source)
@@ -2418,16 +2428,18 @@ public class KeyboardSession : IDisposable
 				return result;
 			}
 
+			KeyDepthProfile ToDepthProfile(Dictionary<int, float> source, float uniform, bool isUniform) =>
+				isUniform
+					? new KeyDepthProfile { Default = uniform }
+					: new KeyDepthProfile { Default = 0, Keys = BuildPerKeyMap(source) };
+
 			bool uniformAct = IsUniform(actuations,  out float uActMm);
 			bool uniformDs  = IsUniform(downstrokes, out float uDsMm);
 			bool uniformUs  = IsUniform(upstrokes,   out float uUsMm);
 
-			uniformActuationMm  = uniformAct ? uActMm : null;
-			perKeyActuationMm   = uniformAct ? null : BuildPerKeyMap(actuations);
-			uniformDownstrokeMm = uniformDs  ? uDsMm : null;
-			perKeyDownstrokeMm  = uniformDs  ? null : BuildPerKeyMap(downstrokes);
-			uniformUpstrokeMm   = uniformUs  ? uUsMm : null;
-			perKeyUpstrokeMm    = uniformUs  ? null : BuildPerKeyMap(upstrokes);
+			actuation  = ToDepthProfile(actuations,  uActMm, uniformAct);
+			downstroke = ToDepthProfile(downstrokes, uDsMm,  uniformDs);
+			upstroke   = ToDepthProfile(upstrokes,   uUsMm,  uniformUs);
 		}
 
 		KeyboardTheme? theme = null;
@@ -2442,12 +2454,9 @@ public class KeyboardSession : IDisposable
 
 		return new KeyboardProfile
 		{
-			ActuationMm           = uniformActuationMm,
-			PerKeyActuationMm     = perKeyActuationMm,
-			DownstrokeMm          = uniformDownstrokeMm,
-			PerKeyDownstrokeMm    = perKeyDownstrokeMm,
-			UpstrokeMm            = uniformUpstrokeMm,
-			PerKeyUpstrokeMm      = perKeyUpstrokeMm,
+			Actuation             = actuation,
+			Downstroke            = downstroke,
+			Upstroke              = upstroke,
 			RapidTrigger          = _rapidTriggerEnabled,
 			RapidTriggerAutoMatch = _rapidTriggerAutoMatch,
 			TurboMode             = _turboEnabled,

@@ -26,6 +26,7 @@ namespace DrunkDeer.Protocol;
 /// {
 ///     ActuationMm  = 2.0f,
 ///     RapidTrigger = true,
+///     Actuation    = new KeyDepthProfileBuilder().Default(2.0f).Build(),
 ///     Theme        = new KeyboardThemeBuilder().Base(0, 80, 255).Brightness(7).Build()
 /// };
 /// session.ApplyProfile(profile);
@@ -37,33 +38,25 @@ namespace DrunkDeer.Protocol;
 /// </example>
 public sealed class KeyboardProfile
 {
-	/// <summary>Uniform actuation depth in mm applied to every key. Overridden per-key by <see cref="PerKeyActuationMm"/>.</summary>
-	[JsonPropertyName("actuationMm")]
-	public float? ActuationMm { get; set; }
+	/// <summary>
+	/// Actuation point depths. When non-null, <see cref="KeyDepthProfile.Default"/> is applied
+	/// to every key and any entries in <see cref="KeyDepthProfile.Keys"/> override individual keys.
+	/// Null means actuation is left unchanged on apply.
+	/// </summary>
+	[JsonPropertyName("actuation")]
+	public KeyDepthProfile? Actuation { get; set; }
 
 	/// <summary>
-	/// Per-key actuation depth overrides in mm, keyed by <see cref="DDKey"/> name (case-insensitive).
-	/// Applied on top of <see cref="ActuationMm"/> if both are set, or on top of the current
-	/// keyboard profile if only this map is set.
+	/// Rapid Trigger downstroke thresholds. Same null-means-unchanged semantics as <see cref="Actuation"/>.
 	/// </summary>
-	[JsonPropertyName("perKeyActuationMm")]
-	public Dictionary<string, float>? PerKeyActuationMm { get; set; }
+	[JsonPropertyName("downstroke")]
+	public KeyDepthProfile? Downstroke { get; set; }
 
-	/// <summary>Uniform Rapid Trigger downstroke threshold in mm for every key.</summary>
-	[JsonPropertyName("downstrokeMm")]
-	public float? DownstrokeMm { get; set; }
-
-	/// <summary>Per-key Rapid Trigger downstroke threshold overrides.</summary>
-	[JsonPropertyName("perKeyDownstrokeMm")]
-	public Dictionary<string, float>? PerKeyDownstrokeMm { get; set; }
-
-	/// <summary>Uniform Rapid Trigger upstroke threshold in mm for every key.</summary>
-	[JsonPropertyName("upstrokeMm")]
-	public float? UpstrokeMm { get; set; }
-
-	/// <summary>Per-key Rapid Trigger upstroke threshold overrides.</summary>
-	[JsonPropertyName("perKeyUpstrokeMm")]
-	public Dictionary<string, float>? PerKeyUpstrokeMm { get; set; }
+	/// <summary>
+	/// Rapid Trigger upstroke thresholds. Same null-means-unchanged semantics as <see cref="Actuation"/>.
+	/// </summary>
+	[JsonPropertyName("upstroke")]
+	public KeyDepthProfile? Upstroke { get; set; }
 
 	/// <summary>Enables (<see langword="true"/>) or disables (<see langword="false"/>) Rapid Trigger globally.</summary>
 	[JsonPropertyName("rapidTrigger")]
@@ -94,9 +87,7 @@ public sealed class KeyboardProfile
 	/// </summary>
 	[JsonIgnore]
 	public bool IsThemeOnly =>
-		ActuationMm == null && PerKeyActuationMm == null &&
-		DownstrokeMm == null && PerKeyDownstrokeMm == null &&
-		UpstrokeMm == null && PerKeyUpstrokeMm == null &&
+		Actuation == null && Downstroke == null && Upstroke == null &&
 		RapidTrigger == null && RapidTriggerAutoMatch == null && TurboMode == null;
 
 	private static readonly JsonSerializerOptions _options = new()

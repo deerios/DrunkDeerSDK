@@ -77,35 +77,27 @@ public class ActuationPointTests
 			Assert.That(pkt2[4 + i], Is.EqualTo(38), $"key {118 + i} in packet 2");
 	}
 
-	// ── SetActuationPoint (per-key array) ─────────────────────────────────────
+	// ── SetActuationPoints (per-key profile) ─────────────────────────────────
 
 	[Test]
-	public void SetActuationPoint_PerKey_FirstKeyEncodedInPacket0()
+	public void SetActuationPoints_PerKey_FirstKeyEncodedInPacket0()
 	{
 		_fake.EnqueueStandardKeyPointAcks();
-		var depths = new float[127];
-		Array.Fill(depths, 2.0f);
-		depths[0] = 1.0f; // key 0 -> raw 10
-		_session.SetActuationPoint(depths);
-		Assert.That(_fake.SentPackets[0][4], Is.EqualTo(10));
+		var profile = new KeyDepthProfileBuilder().Default(2.0f).Key(DDKey.Escape, 1.0f).Build();
+		_session.SetActuationPoints(profile);
+		int escIdx = _session.GetKeyIndex(DDKey.Escape); // 0 on A75
+		Assert.That(_fake.SentPackets[0][4 + escIdx], Is.EqualTo(10));
 	}
 
 	[Test]
-	public void SetActuationPoint_PerKey_LastKeyInPacket1EncodedCorrectly()
+	public void SetActuationPoints_PerKey_LastKeyInPacket1EncodedCorrectly()
 	{
 		_fake.EnqueueStandardKeyPointAcks();
-		var depths = new float[127];
-		Array.Fill(depths, 2.0f);
-		depths[117] = 0.5f; // key 117 = last in packet 1 -> raw 5
-		_session.SetActuationPoint(depths);
-		// Packet 1 covers keys 59–117 (59 keys); key 117 is at index 58 within that range
-		Assert.That(_fake.SentPackets[1][4 + 58], Is.EqualTo(5));
-	}
-
-	[Test]
-	public void SetActuationPoint_WrongArrayLength_Throws()
-	{
-		Assert.Throws<ArgumentException>(() => _session.SetActuationPoint(new float[50]));
+		var profile = new KeyDepthProfileBuilder().Default(2.0f).Key(DDKey.Menu, 0.5f).Build();
+		_session.SetActuationPoints(profile);
+		int menuIdx    = _session.GetKeyIndex(DDKey.Menu); // 117 on A75
+		int offsetInP1 = menuIdx - 59;
+		Assert.That(_fake.SentPackets[1][4 + offsetInP1], Is.EqualTo(5));
 	}
 
 	[Test]

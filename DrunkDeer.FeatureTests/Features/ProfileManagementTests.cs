@@ -276,12 +276,12 @@ public class ProfileManagementTests
 		var profile = _session.CaptureProfile();
 		Assert.Multiple(() =>
 		{
-			Assert.That(profile.ActuationMm, Is.Not.Null, "uniform actuation");
-			Assert.That(profile.PerKeyActuationMm, Is.Null, "no per-key actuation");
-			Assert.That(profile.DownstrokeMm, Is.Not.Null, "uniform downstroke");
-			Assert.That(profile.PerKeyDownstrokeMm, Is.Null, "no per-key downstroke");
-			Assert.That(profile.UpstrokeMm, Is.Not.Null, "uniform upstroke");
-			Assert.That(profile.PerKeyUpstrokeMm, Is.Null, "no per-key upstroke");
+			Assert.That(profile.Actuation,            Is.Not.Null, "actuation captured");
+			Assert.That(profile.Actuation!.Keys,      Is.Null,     "uniform actuation - no per-key overrides");
+			Assert.That(profile.Downstroke,           Is.Not.Null, "downstroke captured");
+			Assert.That(profile.Downstroke!.Keys,     Is.Null,     "uniform downstroke - no per-key overrides");
+			Assert.That(profile.Upstroke,             Is.Not.Null, "upstroke captured");
+			Assert.That(profile.Upstroke!.Keys,       Is.Null,     "uniform upstroke - no per-key overrides");
 		});
 	}
 
