@@ -3,6 +3,4 @@
   <Project Path="../DrunkDeer.FeatureTests/DrunkDeer.FeatureTests.csproj" />
   <Project Path="../DrunkDeer.ProtocolAnalyzer/DrunkDeer.ProtocolAnalyzer.csproj" />
   <Project Path="../DrunkDeer.ProtocolTests/DrunkDeer.ProtocolTests.csproj" />
-  <Project Path="../TestApp/TestApp.csproj" />
-  <Project Path="DrunkDeer.csproj" />
 </Solution>

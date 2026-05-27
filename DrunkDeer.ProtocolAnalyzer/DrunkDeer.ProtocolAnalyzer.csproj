@@ -8,9 +8,6 @@
     <AssemblyName>DrunkDeer.ProtocolAnalyzer</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../DrunkDeer/DrunkDeer.csproj" />
-  </ItemGroup>
-  <ItemGroup>
     <!-- Live USB capture via Npcap + USBPcap (same stack Wireshark uses).
          Only exercised in live mode; PCAP file analysis does not need Npcap installed. -->
     <PackageReference Include="SharpPcap" Version="6.*" />
