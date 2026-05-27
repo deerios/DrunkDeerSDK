@@ -42,9 +42,13 @@ jobs:
 
       - name: Create DLL archive
         run: |
-          zip -j "artifacts/DrunkDeer-${{ steps.version.outputs.VERSION }}.zip" \
-            DrunkDeer/bin/Release/net10.0/*.dll \
-            DrunkDeer/bin/Release/net10.0/*.json
+          dotnet publish DrunkDeer/DrunkDeer.csproj \
+            -c Release \
+            -p:Version=${{ steps.version.outputs.VERSION }} \
+            --no-build \
+            --output ./publish \
+            --nologo
+          zip -j "artifacts/DrunkDeer-${{ steps.version.outputs.VERSION }}.zip" ./publish/*.dll
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
