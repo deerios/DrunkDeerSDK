@@ -48,7 +48,9 @@ jobs:
             --no-build \
             --output ./publish \
             --nologo
-          zip -j "artifacts/DrunkDeer-${{ steps.version.outputs.VERSION }}.zip" ./publish/*.dll
+          zip -j "artifacts/DrunkDeer-${{ steps.version.outputs.VERSION }}.zip" \
+            ./publish/DrunkDeer.dll \
+            ./publish/HidSharp.dll
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
