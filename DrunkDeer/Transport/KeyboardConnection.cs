@@ -1,5 +1,6 @@
 using HidSharp;
-using Serilog;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DrunkDeer.Protocol;
 
@@ -9,7 +10,7 @@ namespace DrunkDeer.Protocol;
 /// </summary>
 public sealed class KeyboardConnection : IKeyboardConnection
 {
-	private static readonly ILogger _log = Log.ForContext<KeyboardConnection>();
+	private readonly ILogger _log;
 
 	private readonly HidTransport _transport;
 
@@ -30,7 +31,8 @@ public sealed class KeyboardConnection : IKeyboardConnection
 	public byte InitialRapidTriggerAutoMatch { get; }
 
 	private KeyboardConnection(HidTransport transport, ModelInfo model, string variant, byte fw,
-		byte initialTurboValue, byte initialRapidTriggerEnabled, byte initialLastWinValue, byte initialRapidTriggerAutoMatch)
+		byte initialTurboValue, byte initialRapidTriggerEnabled, byte initialLastWinValue, byte initialRapidTriggerAutoMatch,
+		ILogger log)
 	{
 		_transport                    = transport;
 		Model                         = model;
@@ -40,6 +42,7 @@ public sealed class KeyboardConnection : IKeyboardConnection
 		InitialRapidTriggerEnabled    = initialRapidTriggerEnabled;
 		InitialLastWinValue           = initialLastWinValue;
 		InitialRapidTriggerAutoMatch  = initialRapidTriggerAutoMatch;
+		_log                          = log;
 	}
 
 	/// <summary>
@@ -47,19 +50,21 @@ public sealed class KeyboardConnection : IKeyboardConnection
 	/// also tries to open a read-only data stream on the same VID/PID,
 	/// then performs the identity handshake to resolve the keyboard model.
 	/// </summary>
-	public static KeyboardConnection Open(HidDevice commandDevice)
+	public static KeyboardConnection Open(HidDevice commandDevice, ILoggerFactory? loggerFactory = null)
 	{
+		var log = (ILogger?)loggerFactory?.CreateLogger<KeyboardConnection>() ?? NullLogger.Instance;
+
 		var options = new OpenConfiguration();
 		options.SetOption(OpenOption.Interruptible, true);
 
-		_log.Debug("Opening command interface: {Path}", commandDevice.DevicePath);
+		log.LogDebug("Opening command interface: {Path}", commandDevice.DevicePath);
 
 		if (!commandDevice.TryOpen(options, out var commandStream))
 			throw new InvalidOperationException($"Cannot open HID command interface: {commandDevice.DevicePath}");
 
 		commandStream.WriteTimeout = 5000;
 		commandStream.ReadTimeout  = 5000;
-		_log.Debug("Command interface opened (MaxOut={Out} MaxIn={In})",
+		log.LogDebug("Command interface opened (MaxOut={Out} MaxIn={In})",
 			commandDevice.GetMaxOutputReportLength(), commandDevice.GetMaxInputReportLength());
 
 		// Try to open the read-only data stream (Out=0, In>=64) on the same VID/PID.
@@ -77,25 +82,25 @@ public sealed class KeyboardConnection : IKeyboardConnection
 			}
 			catch { continue; }
 
-			_log.Debug("Data-stream candidate: {Path}  Out={Out} In={In}", device.DevicePath, outLen, inLen);
+			log.LogDebug("Data-stream candidate: {Path}  Out={Out} In={In}", device.DevicePath, outLen, inLen);
 			if (outLen != 0 || inLen < 64) continue;
 
 			if (device.TryOpen(options, out dataStream))
 			{
 				dataStream.ReadTimeout = 200;
-				_log.Debug("Data stream opened: {Path}", device.DevicePath);
+				log.LogDebug("Data stream opened: {Path}", device.DevicePath);
 				break;
 			}
 		}
 
 		if (dataStream is null)
-			_log.Warning("No data stream found - falling back to command-stream polling.");
+			log.LogWarning("No data stream found - falling back to command-stream polling.");
 
-		var transport = new HidTransport(commandDevice, commandStream, dataStream);
+		var transport = new HidTransport(commandDevice, commandStream, dataStream, loggerFactory);
 
 		try
 		{
-			_log.Debug("Sending IdentityRequest…");
+			log.LogDebug("Sending IdentityRequest…");
 			transport.Send(IdentityRequest.Build());
 
 			byte[]? resp = null;
@@ -105,7 +110,7 @@ public sealed class KeyboardConnection : IKeyboardConnection
 				resp = transport.ReceiveCommand(500);
 				if (resp is not null)
 				{
-					_log.Debug("Handshake attempt {N}: received {Len} bytes, matches={M}",
+					log.LogDebug("Handshake attempt {N}: received {Len} bytes, matches={M}",
 						attempt, resp.Length, IdentityResponse.Matches(resp));
 					lastReceived = resp;
 					if (IdentityResponse.Matches(resp))
@@ -113,7 +118,7 @@ public sealed class KeyboardConnection : IKeyboardConnection
 				}
 				else
 				{
-					_log.Debug("Handshake attempt {N}: timeout", attempt);
+					log.LogDebug("Handshake attempt {N}: timeout", attempt);
 				}
 				resp = null;
 			}
@@ -127,7 +132,7 @@ public sealed class KeyboardConnection : IKeyboardConnection
 			}
 
 			var id = IdentityResponse.GetModel(resp);
-			_log.Debug("Model bytes: {A:X2} {B:X2} {C:X2}", id[0], id[1], id[2]);
+			log.LogDebug("Model bytes: {A:X2} {B:X2} {C:X2}", id[0], id[1], id[2]);
 
 			var resolved = ModelRegistry.Resolve(id[0], id[1], id[2])
 				?? throw new InvalidOperationException(
@@ -137,12 +142,13 @@ public sealed class KeyboardConnection : IKeyboardConnection
 				?? throw new InvalidOperationException($"No ModelInfo for slug '{resolved.Slug}'.");
 
 			byte fw = IdentityResponse.GetFirmwareVersion(resp);
-			_log.Information("Handshake complete: {Name} ({Variant}) fw={Fw}", info.Name, resolved.Variant, fw);
+			log.LogInformation("Handshake complete: {Name} ({Variant}) fw={Fw}", info.Name, resolved.Variant, fw);
 			return new KeyboardConnection(transport, info, resolved.Variant, fw,
 				IdentityResponse.GetTurboValue(resp),
 				IdentityResponse.GetRapidTriggerEnabled(resp),
 				IdentityResponse.GetLastWinValue(resp),
-				IdentityResponse.GetRapidTriggerAutoMatch(resp));
+				IdentityResponse.GetRapidTriggerAutoMatch(resp),
+				log);
 		}
 		catch
 		{

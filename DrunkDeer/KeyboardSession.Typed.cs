@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace DrunkDeer.Protocol;
 
 /// <summary>
@@ -13,12 +15,13 @@ namespace DrunkDeer.Protocol;
 /// </typeparam>
 public sealed class KeyboardSession<TModel> : KeyboardSession
 {
-    internal KeyboardSession(IKeyboardConnection connection) : base(connection) { }
+    internal KeyboardSession(IKeyboardConnection connection, ILoggerFactory? loggerFactory = null)
+        : base(connection, loggerFactory) { }
 
     /// <summary>
     /// Opens the first connected DrunkDeer keyboard and returns a typed session.
     /// Throws <see cref="DrunkDeerDeviceNotFoundException"/> if no compatible device is found.
     /// </summary>
-    public static new KeyboardSession<TModel> OpenFirst() =>
-        new(KeyboardDiscoverer.OpenFirst());
+    public static new KeyboardSession<TModel> OpenFirst(ILoggerFactory? loggerFactory = null) =>
+        new(KeyboardDiscoverer.OpenFirst(loggerFactory), loggerFactory);
 }

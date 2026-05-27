@@ -1,6 +1,7 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.Runtime.CompilerServices;
-using Serilog;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Buffers.Binary;
 using System.Diagnostics;
 
@@ -161,7 +162,7 @@ public enum LightingMode : byte
 /// </summary>
 public class KeyboardSession : IDisposable
 {
-	private static readonly ILogger _log = Log.ForContext<KeyboardSession>();
+	private readonly ILogger _log;
 
 	// Firmware always addresses 127 key slots (indices 0-126) across three B7 packets.
 	private const int KeyCount = 127;
@@ -438,8 +439,9 @@ public class KeyboardSession : IDisposable
 		return PrecisionMode.Standard;
 	}
 
-	internal KeyboardSession(IKeyboardConnection connection)
+	internal KeyboardSession(IKeyboardConnection connection, ILoggerFactory? loggerFactory = null)
 	{
+		_log           = (ILogger?)loggerFactory?.CreateLogger<KeyboardSession>() ?? NullLogger.Instance;
 		_connection    = connection;
 		Model          = connection.Model;
 		Variant        = connection.Variant;
@@ -468,19 +470,19 @@ public class KeyboardSession : IDisposable
 	/// Opens the first detected DrunkDeer keyboard, performs the identity handshake,
 	/// and returns a ready-to-use <see cref="KeyboardSession"/>.
 	/// </summary>
-	public static KeyboardSession OpenFirst() =>
-		new(KeyboardDiscoverer.OpenFirst());
+	public static KeyboardSession OpenFirst(ILoggerFactory? loggerFactory = null) =>
+		new(KeyboardDiscoverer.OpenFirst(loggerFactory), loggerFactory);
 
 	/// <summary>Starts the background poll loop. Calling while already polling is a no-op.</summary>
 	public void StartPolling(CancellationToken cancellationToken = default)
 	{
 		if (_pollTask is { IsCompleted: false })
 		{
-			_log.Warning("StartPolling called while already polling");
+			_log.LogWarning("StartPolling called while already polling");
 			return;
 		}
 
-		_log.Information("Starting poll loop (PressThresholdMm={P}, ReleaseThresholdMm={R}, PrecisionMode={PM})",
+		_log.LogInformation("Starting poll loop (PressThresholdMm={P}, ReleaseThresholdMm={R}, PrecisionMode={PM})",
 			PressThresholdMm, ReleaseThresholdMm, _precisionMode);
 		_pollCts  = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 		_pollTask = Task.Run(() => PollLoop(_pollCts.Token), _pollCts.Token);
@@ -489,15 +491,15 @@ public class KeyboardSession : IDisposable
 	/// <summary>Signals the polling loop to stop and waits up to two seconds for it to exit.</summary>
 	public void StopPolling()
 	{
-		_log.Information("Stopping poll loop…");
+		_log.LogInformation("Stopping poll loop…");
 		_pollCts?.Cancel();
 		_pollTask?.Wait(TimeSpan.FromSeconds(2));
-		_log.Information("Poll loop stopped.");
+		_log.LogInformation("Poll loop stopped.");
 	}
 
 	private void PollLoop(CancellationToken ct)
 	{
-		_log.Information("PollLoop started (HasDataStream={DS}, PrecisionMode={PM}).",
+		_log.LogInformation("PollLoop started (HasDataStream={DS}, PrecisionMode={PM}).",
 			_connection.HasDataStream, _precisionMode);
 		_connection.FlushReadBuffer();
 
@@ -514,7 +516,7 @@ public class KeyboardSession : IDisposable
 			try { _connection.Send(request); }
 			catch (Exception ex)
 			{
-				_log.Warning(ex, "PollLoop: send failed - keyboard disconnected.");
+				_log.LogWarning(ex, "PollLoop: send failed - keyboard disconnected.");
 				Disconnected?.Invoke(this, EventArgs.Empty);
 				return;
 			}
@@ -539,7 +541,7 @@ public class KeyboardSession : IDisposable
 				{
 					if (!TravelResponse.Matches(buf))
 					{
-						_log.Debug("PollLoop: non-B7 during frame collection (cmd=0x{C:X2}), retry {R}",
+						_log.LogDebug("PollLoop: non-B7 during frame collection (cmd=0x{C:X2}), retry {R}",
 							buf[0], retries);
 						retries++;
 						continue;
@@ -547,7 +549,7 @@ public class KeyboardSession : IDisposable
 					int idx = TravelResponse.GetPacketIndex(buf);
 					if ((uint)idx > 2)
 					{
-						_log.Debug("PollLoop: B7 bad index {Idx}, retry {R}", idx, retries);
+						_log.LogDebug("PollLoop: B7 bad index {Idx}, retry {R}", idx, retries);
 						retries++;
 						continue;
 					}
@@ -559,7 +561,7 @@ public class KeyboardSession : IDisposable
 			if (!AllReceived(gotPkt))
 			{
 				droppedFrames++;
-				_log.Debug("PollLoop: dropped frame #{F} (retries={R})",
+				_log.LogDebug("PollLoop: dropped frame #{F} (retries={R})",
 					totalFrames + droppedFrames, retries);
 				continue;
 			}
@@ -569,7 +571,7 @@ public class KeyboardSession : IDisposable
 			lastTicks    = now;
 			totalFrames++;
 
-			_log.Verbose("PollLoop: frame #{F} elapsed={Ms:F2}ms (dropped={D})",
+			_log.LogTrace("PollLoop: frame #{F} elapsed={Ms:F2}ms (dropped={D})",
 				totalFrames, elapsed.TotalMilliseconds, droppedFrames);
 
 			if (_precisionMode == PrecisionMode.HighPrecision)
@@ -578,7 +580,7 @@ public class KeyboardSession : IDisposable
 				DispatchFrame(packets, elapsed);
 		}
 
-		_log.Information("PollLoop exiting. frames={F} dropped={D}", totalFrames, droppedFrames);
+		_log.LogInformation("PollLoop exiting. frames={F} dropped={D}", totalFrames, droppedFrames);
 	}
 
 	private void DispatchFrame(byte[][] packets, TimeSpan elapsed)
@@ -599,7 +601,7 @@ public class KeyboardSession : IDisposable
 				short prev = _heights[key];
 				if (h == prev) continue;
 
-				_log.Verbose("Height[{I:000}] {Prev} -> {H}  (press={Ps} thresh={PT}/{RT})",
+				_log.LogTrace("Height[{I:000}] {Prev} -> {H}  (press={Ps} thresh={PT}/{RT})",
 					key, prev, h, _pressed[key], pressRaw, releaseRaw);
 				UpdateKeyState(key, prev, h, pressRaw, releaseRaw);
 			}
@@ -643,13 +645,13 @@ public class KeyboardSession : IDisposable
 		if (!_pressed[key] && h >= pressRaw)
 		{
 			_pressed[key] = true;
-			_log.Debug("KeyDown  idx={I:000} h={H}", key, h);
+			_log.LogDebug("KeyDown  idx={I:000} h={H}", key, h);
 			KeyDown?.Invoke(this, new KeyEventArgs(key, h));
 		}
 		else if (_pressed[key] && h < releaseRaw)
 		{
 			_pressed[key] = false;
-			_log.Debug("KeyUp    idx={I:000} h={H}", key, h);
+			_log.LogDebug("KeyUp    idx={I:000} h={H}", key, h);
 			var args = new KeyEventArgs(key, h);
 			KeyUp?.Invoke(this, args);
 			KeyPressed?.Invoke(this, args);
@@ -745,7 +747,7 @@ public class KeyboardSession : IDisposable
 		{
 			if (!TryGetKeyIndex(key, out int idx))
 			{
-				_log.Warning("SetActuationPoint: key {Key} not present on {Model}; skipped.", key, Model.Name);
+				_log.LogWarning("SetActuationPoint: key {Key} not present on {Model}; skipped.", key, Model.Name);
 				continue;
 			}
 			ValidateDepthMm(depthMm, idx);
@@ -791,7 +793,7 @@ public class KeyboardSession : IDisposable
 		{
 			if (!TryGetKeyIndex(key, out int idx))
 			{
-				_log.Warning("SetDownstrokePoint: key {Key} not present on {Model}; skipped.", key, Model.Name);
+				_log.LogWarning("SetDownstrokePoint: key {Key} not present on {Model}; skipped.", key, Model.Name);
 				continue;
 			}
 			ValidateDepthMm(depthMm, idx);
@@ -837,7 +839,7 @@ public class KeyboardSession : IDisposable
 		{
 			if (!TryGetKeyIndex(key, out int idx))
 			{
-				_log.Warning("SetUpstrokePoint: key {Key} not present on {Model}; skipped.", key, Model.Name);
+				_log.LogWarning("SetUpstrokePoint: key {Key} not present on {Model}; skipped.", key, Model.Name);
 				continue;
 			}
 			ValidateDepthMm(depthMm, idx);
@@ -870,7 +872,7 @@ public class KeyboardSession : IDisposable
 			{
 				if (!Enum.TryParse<DDKey>(name, ignoreCase: true, out var key) || !TryGetKeyIndex(key, out int idx))
 				{
-					_log.Warning("{Method}: unknown key '{Key}'; skipped.", callerName, name);
+					_log.LogWarning("{Method}: unknown key '{Key}'; skipped.", callerName, name);
 					continue;
 				}
 				depths[idx] = depthMm;
@@ -942,7 +944,7 @@ public class KeyboardSession : IDisposable
 		if (mm > SafeMaxDepthMm)
 		{
 			var location = keyIndex >= 0 ? $" (key {keyIndex})" : "";
-			_log.Warning(
+			_log.LogWarning(
 				"Depth {Mm:F3} mm{Location} exceeds {Safe} mm - depths above this threshold may cause " +
 				"the firmware to emit repeated keypress packets while a key is held down.",
 				mm, location, SafeMaxDepthMm);
@@ -1191,7 +1193,7 @@ public class KeyboardSession : IDisposable
 		{
 			if (!TryGetKeyIndex(key, out int gridIdx))
 			{
-				_log.Warning("SetKeyColor: key {Key} not present on {Model}; skipped.", key, Model.Name);
+				_log.LogWarning("SetKeyColor: key {Key} not present on {Model}; skipped.", key, Model.Name);
 				continue;
 			}
 			_rgbProfile[gridIdx] = (r, g, b);
@@ -1618,7 +1620,7 @@ public class KeyboardSession : IDisposable
 		{
 			if (!Enum.TryParse<DDKey>(name, ignoreCase: true, out var key) || !TryGetKeyIndex(key, out int idx))
 			{
-				_log.Warning("ApplyProfile: unknown key '{Key}' in {Field}; skipped.", name, fieldName);
+				_log.LogWarning("ApplyProfile: unknown key '{Key}' in {Field}; skipped.", name, fieldName);
 				continue;
 			}
 			target[idx] = mm;
@@ -1637,7 +1639,7 @@ public class KeyboardSession : IDisposable
 			{
 				if (!Enum.TryParse<DDKey>(name, ignoreCase: true, out var key) || !TryGetKeyIndex(key, out int gridIdx))
 				{
-					_log.Warning("ApplyTheme: unknown key '{Key}'; skipped.", name);
+					_log.LogWarning("ApplyTheme: unknown key '{Key}'; skipped.", name);
 					continue;
 				}
 				_rgbProfile[gridIdx] = (keyColor.R, keyColor.G, keyColor.B);
@@ -2657,7 +2659,7 @@ public class KeyboardSession : IDisposable
 		EnsureHasFuncBlock();
 		if (!_inFastMode)
 		{
-			_log.Warning("{Method} called without a preceding {Prereq}; nothing sent",
+			_log.LogWarning("{Method} called without a preceding {Prereq}; nothing sent",
 			nameof(StopFastTransferMode), nameof(StartFastTransferMode));
 			return;
 		}
@@ -2717,7 +2719,7 @@ public class KeyboardSession : IDisposable
 		_disposed = true;
 
 		try { StopPolling(); }
-		catch (Exception ex) { _log.Warning(ex, "Dispose: StopPolling faulted."); }
+		catch (Exception ex) { _log.LogWarning(ex, "Dispose: StopPolling faulted."); }
 
 		if (_inFastMode)
 		{
@@ -2726,7 +2728,7 @@ public class KeyboardSession : IDisposable
 				_connection.Send([0x55, 0x02]);
 				_inFastMode = false;
 			}
-			catch (Exception ex) { _log.Warning(ex, "Dispose: EndFastMode send failed (keyboard may be disconnected)."); }
+			catch (Exception ex) { _log.LogWarning(ex, "Dispose: EndFastMode send failed (keyboard may be disconnected)."); }
 		}
 
 		_connection.Dispose();

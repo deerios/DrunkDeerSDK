@@ -1,4 +1,5 @@
 using HidSharp;
+using Microsoft.Extensions.Logging;
 
 namespace DrunkDeer.Protocol;
 
@@ -35,7 +36,8 @@ public static class KeyboardDiscoverer
 	/// <summary>
 	/// Opens a <see cref="KeyboardConnection"/> on the first matching device.
 	/// </summary>
-	public static KeyboardConnection OpenFirst() => KeyboardConnection.Open(FindAll()[0]);
+	public static KeyboardConnection OpenFirst(ILoggerFactory? loggerFactory = null) =>
+		KeyboardConnection.Open(FindAll()[0], loggerFactory);
 
 	// Command interface: bidirectional, Out >= 64 and In >= 64.
 	// (The read-only data interface has Out == 0 and is found separately in KeyboardConnection.Open.)

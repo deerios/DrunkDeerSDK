@@ -1,5 +1,6 @@
 using HidSharp;
-using Serilog;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DrunkDeer.Protocol;
 
@@ -10,17 +11,18 @@ namespace DrunkDeer.Protocol;
 /// </summary>
 internal sealed class HidTransport : IDisposable
 {
-	private static readonly ILogger _log = Log.ForContext<HidTransport>();
+	private readonly ILogger _log;
 
 	private readonly HidDevice _device;
 	private readonly HidStream _command;
 	private readonly HidStream? _data;
 
-	internal HidTransport(HidDevice device, HidStream command, HidStream? data)
+	internal HidTransport(HidDevice device, HidStream command, HidStream? data, ILoggerFactory? loggerFactory = null)
 	{
 		_device  = device;
 		_command = command;
 		_data    = data;
+		_log     = (ILogger?)loggerFactory?.CreateLogger<HidTransport>() ?? NullLogger.Instance;
 	}
 
 	public bool HasDataStream => _data is not null;
@@ -36,7 +38,7 @@ internal sealed class HidTransport : IDisposable
 		var buf = new byte[reportLen];
 		buf[0] = 0x04; // HID output report ID
 		Array.Copy(packet, 0, buf, 1, Math.Min(packet.Length, reportLen - 1));
-		_log.Verbose("TX  [{Hex}]", Hex(buf));
+		_log.LogTrace("TX  [{Hex}]", Hex(buf));
 		_command.Write(buf);
 	}
 
@@ -67,7 +69,7 @@ internal sealed class HidTransport : IDisposable
 			catch { }
 			finally { stream.ReadTimeout = saved; }
 		}
-		_log.Verbose("FlushReadBuffer complete");
+		_log.LogTrace("FlushReadBuffer complete");
 	}
 
 	private byte[]? ReadFrom(HidStream stream, int timeoutMs, string label)
@@ -78,21 +80,21 @@ internal sealed class HidTransport : IDisposable
 		try { read = stream.Read(buf, 0, buf.Length); }
 		catch (TimeoutException)
 		{
-			_log.Verbose("RX  {Label} timeout ({Ms}ms)", label, timeoutMs);
+			_log.LogTrace("RX  {Label} timeout ({Ms}ms)", label, timeoutMs);
 			return null;
 		}
 		catch (Exception ex)
 		{
-			_log.Error(ex, "RX  {Label} read exception", label);
+			_log.LogError(ex, "RX  {Label} read exception", label);
 			return null;
 		}
 		if (read <= 1)
 		{
-			_log.Verbose("RX  {Label} too-short ({N} bytes)", label, read);
+			_log.LogTrace("RX  {Label} too-short ({N} bytes)", label, read);
 			return null;
 		}
 		var result = buf[1..read]; // strip the report-ID byte; callers see protocol bytes at index 0
-		_log.Verbose("RX  {Label} [{Hex}]", label, Hex(result));
+		_log.LogTrace("RX  {Label} [{Hex}]", label, Hex(result));
 		return result;
 	}
 
