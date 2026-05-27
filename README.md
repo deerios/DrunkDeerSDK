@@ -299,6 +299,16 @@ session.ApplyProfile(loaded);
 
 `session.PrecisionMode` reports the active mode. Actuation read-back and high-precision key-point writes are only available in `HighPrecision` mode.
 
+# AI Disclosure
+
+LLMs were used to assist in reverse-engineering the DrunkDeer protocol and generating test coverage. The codebase undergoes careful human review and verification by the maintainers of this repository to ensure that usage of the public API does not cause irreversible damage to DrunkDeer keyboard peripherals. See LICENSE.md for additional details.
+
+Human cross-confirmation of the public API has been used for the following models:
+
+| Model | Human Verified |
+|---|---|
+| `A75` | ✔️ |
+
 ## Additional documentation
 
 See [GitHub Wiki](../../wiki):
