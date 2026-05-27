@@ -316,3 +316,10 @@ See [GitHub Wiki](../../wiki):
 - **[Testing](../../wiki/Testing)** - using `FakeKeyboardConnection` to write tests without a physical keyboard
 - **[Protocol Analyzer](../../wiki/ProtocolAnalyzer)** - validating USB captures against the protocol implementation
 - **[Code Generation](../../wiki/CodeGen)** - regenerating `Generated/` from YAML + Scriban templates when adding new models or capabilities
+
+## Disclaimer
+This project is an independent, open-source initiative. It is not affiliated with, funded by, endorsed by, or in any way officially connected to DrunkDeer Ltd, or any of its subsidiaries or affiliates.
+
+The official website for DrunkDeer Ltd can be found at drunkdeer.com. The name DrunkDeer as well as related names, marks, emblems, and images are registered trademarks of their respective owners.
+
+DrunkDeer © Copyright DrunkDeer limited（ HANG WAI IND CTR NO 6 KIN TAI ST, TUEN MUN, NT, HONGKONG).
