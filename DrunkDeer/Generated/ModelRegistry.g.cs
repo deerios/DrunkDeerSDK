@@ -20,8 +20,6 @@ public static class ModelSlugs
     public const string G65M3 = "g65_m3";
     public const string G60 = "g60";
     public const string G60V600 = "g60_v600";
-    public const string Unk601 = "unk_601";
-    public const string Unk602 = "unk_602";
     public const string X60Future = "x60_future";
 }
 
@@ -104,8 +102,6 @@ public static class ModelRegistry
         new(0x0B, 0x03, 0x01, ModelSlugs.G60, "ansi"),
         new(0x0B, 0x03, 0x02, ModelSlugs.G60, "iso"),
         new(0x0B, 0x03, 0x03, ModelSlugs.G60V600, "ansi"),
-        new(0x0B, 0x13, 0x01, ModelSlugs.Unk601, "ansi"),
-        new(0x0B, 0x15, 0x01, ModelSlugs.Unk602, "ansi"),
         new(0x0B, 0x06, 0x05, ModelSlugs.X60Future, "ansi"),
     ];
 
@@ -267,30 +263,6 @@ public static class ModelRegistry
             KunPrecisionMinFirmware = null,
             KunMaxDepthMm    = 2f,
         },
-        [ModelSlugs.Unk601] = new ModelInfo
-        {
-            Slug             = ModelSlugs.Unk601,
-            Name             = "Unknown-601",
-            Capabilities     = Capabilities.KunPrecision | Capabilities.TurboMode,
-            LayoutSlotOffset = 0,
-            RgbPacketCount   = 7,
-            MinDepthMm       = 0.2f,
-            MaxDepthMm       = 2f,
-            KunPrecisionMinFirmware = null,
-            KunMaxDepthMm    = 2f,
-        },
-        [ModelSlugs.Unk602] = new ModelInfo
-        {
-            Slug             = ModelSlugs.Unk602,
-            Name             = "Unknown-602",
-            Capabilities     = Capabilities.KunPrecision | Capabilities.TurboMode,
-            LayoutSlotOffset = 0,
-            RgbPacketCount   = 7,
-            MinDepthMm       = 0.2f,
-            MaxDepthMm       = 2f,
-            KunPrecisionMinFirmware = null,
-            KunMaxDepthMm    = 2f,
-        },
         [ModelSlugs.X60Future] = new ModelInfo
         {
             Slug             = ModelSlugs.X60Future,
@@ -352,9 +324,5 @@ public sealed class G65M3 : IHasTurboMode { }
 public sealed class G60 { }
 /// <summary>Model marker type for G60 v600. Implements: IHasTurboMode.</summary>
 public sealed class G60V600 : IHasTurboMode { }
-/// <summary>Model marker type for Unknown-601. Implements: IHasTurboMode.</summary>
-public sealed class Unk601 : IHasTurboMode { }
-/// <summary>Model marker type for Unknown-602. Implements: IHasTurboMode.</summary>
-public sealed class Unk602 : IHasTurboMode { }
 /// <summary>Model marker type for X60 Future. Implements: IHasHighPrecision, IHasTurboMode, IHasSideLight.</summary>
 public sealed class X60Future : IHasHighPrecision, IHasTurboMode, IHasSideLight { }

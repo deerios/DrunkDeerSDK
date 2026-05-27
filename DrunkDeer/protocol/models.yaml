@@ -213,27 +213,6 @@ models:
       - bytes: [0x0b, 0x03, 0x03]
         variant: ansi
 
-  # Unknown models - keyboard_types 601 and 602 in JS dispatch; always kun_precision.
-  unk_601:
-    name: Unknown-601
-    capabilities: [kun_precision, turbo_mode]
-    firmware_overrides:
-      min_depth_mm: 0.2
-      max_depth_mm: 2.0
-    identities:
-      - bytes: [0x0b, 0x13, 0x01]
-        variant: ansi
-
-  unk_602:
-    name: Unknown-602
-    capabilities: [kun_precision, turbo_mode]
-    firmware_overrides:
-      min_depth_mm: 0.2
-      max_depth_mm: 2.0
-    identities:
-      - bytes: [0x0b, 0x15, 0x01]
-        variant: ansi
-
   # X60 Future - JS device type 102, firmware X60Future_CSE23429E1.
   # Has a dedicated side LED strip zone (confirmed from JS setKeyboardSideLight).
   # Not compatible with Kun switch.

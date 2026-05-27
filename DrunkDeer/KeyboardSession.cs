@@ -265,7 +265,7 @@ public class KeyboardSession : IDisposable
 	/// <summary>
 	/// <see langword="true"/> if the connected keyboard persists Turbo mode via the FuncBlock gateway.
 	/// HighPrecision models (A75 Ultra, A75 Master, X60 Future) and always-KunPrecision
-	/// models (G65 m1/m2/m3, G60 v600, Unk601/602) support this feature.
+	/// models (G65 m1/m2/m3, G60 v600) support this feature.
 	/// Standard-precision models with firmware-gated Kun do not because old firmware does
 	/// not respond to the FuncBlock gateway (0x55/0x05).
 	/// </summary>
