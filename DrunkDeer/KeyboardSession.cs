@@ -597,7 +597,7 @@ public class KeyboardSession : IDisposable
 			for (int x = 0; x < count; x++)
 			{
 				int key = baseIdx + x;
-				short h = (sbyte)travel[x];
+				short h = travel[x];
 				short prev = _heights[key];
 				if (h == prev) continue;
 
