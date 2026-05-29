@@ -5,7 +5,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PackageId>DrunkDeer</PackageId>
+    <PackageId>DrunkDeerSDK</PackageId>
     <Authors>deerios</Authors>
     <Description>A .NET library for communicating with DrunkDeer analog keyboards over USB HID.</Description>
     <PackageProjectUrl>https://github.com/deerios/DrunkDeerSDK</PackageProjectUrl>
