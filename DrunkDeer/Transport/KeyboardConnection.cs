@@ -100,16 +100,17 @@ public sealed class KeyboardConnection : IKeyboardConnection
 
 		try
 		{
-			// drain anything buffered from before this session.
-			transport.FlushReadBuffer();
-
-			log.LogDebug("Sending IdentityRequest…");
-			transport.Send(IdentityRequest.Build());
-
 			byte[]? resp = null;
 			byte[]? lastReceived = null;
+
 			for (int attempt = 0; attempt < 20; attempt++)
 			{
+				// drain anything buffered from before this session.
+				transport.FlushReadBuffer();
+
+				log.LogDebug("Sending IdentityRequest…");
+				transport.Send(IdentityRequest.Build());
+
 				resp = transport.ReceiveCommand(500);
 				if (resp is not null)
 				{
