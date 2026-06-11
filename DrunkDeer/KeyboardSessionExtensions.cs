@@ -258,10 +258,24 @@ public static class KeyboardSessionExtensions
     public static IReadOnlyDictionary<DDKey, float> ReadUpstrokePointByKey<T>(this KeyboardSession<T> s)
         where T : IHasHighPrecision => s.ToKeyDictionary(s.ReadUpstrokePoint());
 
-    // ── IHasLogoLight ────────────────────────────────────────────────────────
+	/// <summary>
+	/// Reads the current state of the specified profile from the keyboard and returns a
+	/// serialisable <see cref="KeyboardProfile"/> snapshot. Only data that maps cleanly into
+	/// <see cref="KeyboardProfile"/> is captured:
+	/// <list type="bullet">
+	/// <item>Actuation, Rapid Trigger press/release depths - uniform or per-key.</item>
+	/// <item>Rapid Trigger enabled, RT auto-match, and Turbo mode global flags (not profile-specific on firmware).</item>
+	/// <item>Single-colour lighting theme when the profile uses a single-colour preset effect.</item>
+	/// </list>
+	/// </summary>
+	/// <param name="profileIndex">Keyboard profile slot (0-based, 0–<see cref="ProfileCount"/>−1). Default: 0.</param>
+	public static KeyboardProfile CaptureProfile<T>(this KeyboardSession<T> s, int profileIndex = 0)
+        where T : IHasHighPrecision => s.CaptureProfile(profileIndex);
 
-    /// <summary>Activates a built-in firmware lighting animation on the logo light zone.</summary>
-    public static void SetLogoLightPreset<T>(this KeyboardSession<T> s,
+	// ── IHasLogoLight ────────────────────────────────────────────────────────
+
+	/// <summary>Activates a built-in firmware lighting animation on the logo light zone.</summary>
+	public static void SetLogoLightPreset<T>(this KeyboardSession<T> s,
         LightPreset effect, [Range(0, 9)] byte brightness = 9, byte speed = 5)
         where T : IHasLogoLight => s.SetLogoLightPreset(effect, brightness, speed);
 

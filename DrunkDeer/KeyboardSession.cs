@@ -2517,7 +2517,7 @@ public class KeyboardSession : IDisposable
 	/// </list>
 	/// </summary>
 	/// <param name="profileIndex">Keyboard profile slot (0-based, 0–<see cref="ProfileCount"/>−1). Default: 0.</param>
-	public KeyboardProfile CaptureProfile(int profileIndex = 0)
+	internal KeyboardProfile CaptureProfile(int profileIndex = 0)
 	{
 		EnsureNotPolling();
 		ValidateProfileIndex(profileIndex);
