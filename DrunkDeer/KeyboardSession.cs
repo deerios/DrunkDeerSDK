@@ -589,10 +589,22 @@ public class KeyboardSession : IDisposable
 			_log.LogTrace("PollLoop: frame #{F} elapsed={Ms:F2}ms (dropped={D})",
 				totalFrames, elapsed.TotalMilliseconds, droppedFrames);
 
-			if (_precisionMode == PrecisionMode.HighPrecision)
-				DispatchFrameHighPrecision(packets, elapsed);
-			else
-				DispatchFrame(packets, elapsed);
+			try
+			{
+				if (_precisionMode == PrecisionMode.HighPrecision)
+					DispatchFrameHighPrecision(packets, elapsed);
+				else
+					DispatchFrame(packets, elapsed);
+			}
+			catch (Exception ex)
+			{
+				// DispatchFrame*/UpdateKeyState invoke user-supplied event handlers
+				// (KeyDown/KeyUp/KeyPressed/KeyHeightChanged/Polled). A handler that throws must
+				// not fault this background task - callers only observe that via the unrelated
+				// AggregateException surfacing later from StopPolling's Wait, which is confusing
+				// and stops polling with no clear signal. Log and keep polling instead.
+				_log.LogError(ex, "PollLoop: unhandled exception from an event handler; continuing to poll.");
+			}
 		}
 
 		_log.LogInformation("PollLoop exiting. frames={F} dropped={D}", totalFrames, droppedFrames);
