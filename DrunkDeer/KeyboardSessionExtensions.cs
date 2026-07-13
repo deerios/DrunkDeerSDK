@@ -269,6 +269,15 @@ public static class KeyboardSessionExtensions
 	/// </list>
 	/// </summary>
 	/// <param name="profileIndex">Keyboard profile slot (0-based, 0–<see cref="ProfileCount"/>−1). Default: 0.</param>
+	/// <remarks>
+	/// LOW-12: this is gated <see cref="IHasHighPrecision"/>, but the implementation only needs
+	/// <see cref="IHasFuncBlock"/> (it reads via <c>HasFuncBlock</c>, not precision mode) - so
+	/// Kun-programmable G65 m1/m2/m3 and G60 v600, which support this, are locked out. Not
+	/// re-gated here: CaptureProfile assumes the KeyTriggerConfig trigger region is 0.01 mm/unit
+	/// (divides by 100), which is confirmed on HighPrecision models but unverified on
+	/// Kun-precision ones - re-gating without confirming that first risks silently wrong mm
+	/// values for exactly the models this would newly unlock.
+	/// </remarks>
 	public static KeyboardProfile CaptureProfile<T>(this KeyboardSession<T> s, int profileIndex = 0)
         where T : IHasHighPrecision => s.CaptureProfile(profileIndex);
 
