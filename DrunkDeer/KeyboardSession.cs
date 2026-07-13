@@ -809,6 +809,15 @@ public class KeyboardSession : IDisposable
 	/// Sets the actuation point for specific keys, leaving all others unchanged.
 	/// Keys not present on this model are silently skipped.
 	/// </summary>
+	/// <remarks>
+	/// This is always a full-profile write: the firmware has no "set just these keys" command,
+	/// so every other key is rewritten to whatever this session's in-memory shadow currently
+	/// holds for it - which starts at an SDK-chosen default (2.0 mm), not whatever the keyboard
+	/// was actually last configured to (e.g. via the official app), on Standard-precision models
+	/// with no read-back. The first call in a session will therefore clobber every other key's
+	/// actuation point to that default. Call <see cref="SetActuationPoints"/> with a full
+	/// <see cref="KeyDepthProfile"/> first if you need to preserve specific existing values.
+	/// </remarks>
 	/// <param name="depthMm">Depth in mm. Must be within [<see cref="MinDepthMm"/>, <see cref="MaxDepthMm"/>].</param>
 	/// <param name="keys">One or more keys to update.</param>
 	/// <example>
@@ -860,6 +869,13 @@ public class KeyboardSession : IDisposable
 	/// Sets the downstroke point for specific keys, leaving all others unchanged.
 	/// Keys not present on this model are silently skipped.
 	/// </summary>
+	/// <remarks>
+	/// This is always a full-profile write: the firmware has no "set just these keys" command,
+	/// so every other key is rewritten to whatever this session's in-memory shadow currently
+	/// holds for it - which starts at an SDK-chosen default (0.25 mm), not whatever the keyboard
+	/// was actually last configured to, on Standard-precision models with no read-back. See
+	/// <see cref="SetActuationPoint(float, DDKey[])"/>'s remarks for the same caveat.
+	/// </remarks>
 	public void SetDownstrokePoint(float depthMm, params DDKey[] keys)
 	{
 		EnsureNotPolling();
@@ -906,6 +922,13 @@ public class KeyboardSession : IDisposable
 	/// Sets the upstroke point for specific keys, leaving all others unchanged.
 	/// Keys not present on this model are silently skipped.
 	/// </summary>
+	/// <remarks>
+	/// This is always a full-profile write: the firmware has no "set just these keys" command,
+	/// so every other key is rewritten to whatever this session's in-memory shadow currently
+	/// holds for it - which starts at an SDK-chosen default (0.25 mm), not whatever the keyboard
+	/// was actually last configured to, on Standard-precision models with no read-back. See
+	/// <see cref="SetActuationPoint(float, DDKey[])"/>'s remarks for the same caveat.
+	/// </remarks>
 	public void SetUpstrokePoint(float depthMm, params DDKey[] keys)
 	{
 		EnsureNotPolling();
