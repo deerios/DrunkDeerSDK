@@ -71,6 +71,21 @@ bool pressed  = session.IsKeyPressed(DDKey.W);
 
 > Configuration methods require polling to be stopped - an exception is thrown if called while actively polling.
 
+## Threading
+
+`StartPolling()` runs a background loop on a `Task.Run` thread. All events
+(`KeyHeightChanged`, `KeyDown`, `KeyUp`, `KeyPressed`, `Polled`, `Disconnected`) fire on that
+poll thread, not on the thread that called `StartPolling()`. If you're updating UI from a
+handler, marshal back to the UI thread yourself (e.g. `Dispatcher.Invoke`/`SynchronizationContext.Post`)
+- the SDK does not do this for you.
+
+Reading key state (`GetKeyHeightMm`, `IsKeyPressed`, etc.) from another thread while polling is
+safe - the underlying height/pressed arrays are only ever written with single-element,
+non-tearing writes. Configuration methods (`SetActuationPoint`, `SetKeyColor`, `ApplyProfile`,
+...) are **not** thread-safe and additionally require polling to be stopped first
+(`EnsureNotPolling()` throws otherwise) - don't call them concurrently from multiple threads,
+and don't call them from an event handler running on the poll thread while polling is active.
+
 ## Actuation, downstroke, and upstroke
 
 ```csharp
