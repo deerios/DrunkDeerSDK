@@ -25,21 +25,15 @@ public static class KeyboardDiscoverer
 	/// <summary>
 	/// Returns all HID command interfaces that match a known DrunkDeer (VID, PID) pair.
 	/// The command interface has both In and Out report lengths of at least 64 bytes.
+	/// Returns an empty list if none are found - "find all" returning nothing found is a normal
+	/// result, not an error; <see cref="OpenFirst"/> is where "no keyboard" becomes exceptional.
 	/// </summary>
-	public static IReadOnlyList<HidDevice> FindAll()
-	{
-		var matches = DeviceList.Local
+	public static IReadOnlyList<HidDevice> FindAll() =>
+		DeviceList.Local
 			.GetHidDevices()
 			.Where(d => KnownIdentifiers.Contains((d.VendorID, d.ProductID)))
 			.Where(IsCommandInterface)
 			.ToList();
-
-		if (matches.Count == 0)
-			throw new DrunkDeerDeviceNotFoundException(
-				"No DrunkDeer keyboard command interface found. Is your keyboard connected?");
-
-		return matches;
-	}
 
 	/// <summary>
 	/// Opens a <see cref="KeyboardConnection"/> on the first candidate device that completes the
@@ -50,6 +44,10 @@ public static class KeyboardDiscoverer
 	public static KeyboardConnection OpenFirst(ILoggerFactory? loggerFactory = null)
 	{
 		var candidates = FindAll();
+		if (candidates.Count == 0)
+			throw new DrunkDeerDeviceNotFoundException(
+				"No DrunkDeer keyboard command interface found. Is your keyboard connected?");
+
 		Exception? lastError = null;
 
 		foreach (var device in candidates)
