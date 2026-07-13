@@ -184,7 +184,8 @@ public class KeyboardSession : IDisposable
 	private Task? _pollTask;
 	private CancellationTokenSource? _pollCts;
 	private bool _inFastMode;
-	private bool _disposed;
+	private int _disposedFlag;
+	private bool IsDisposed => Volatile.Read(ref _disposedFlag) != 0;
 
 	// Per-model layout and key-mapping data (initialised in constructor from KeyLayout)
 	private readonly int[] _rgbIndices;
@@ -557,8 +558,15 @@ public class KeyboardSession : IDisposable
 			try { _connection.Send(request); }
 			catch (Exception ex)
 			{
-				_log.LogWarning(ex, "PollLoop: send failed - keyboard disconnected.");
-				Disconnected?.Invoke(this, EventArgs.Empty);
+				// If StopPolling timed out and Dispose() went ahead anyway, _connection.Dispose()
+				// yanks the streams out from under this still-running loop, and the resulting
+				// exception here is expected teardown, not a real disconnect - don't raise a
+				// misleading Disconnected event on an already-disposed session.
+				if (!IsDisposed)
+				{
+					_log.LogWarning(ex, "PollLoop: send failed - keyboard disconnected.");
+					Disconnected?.Invoke(this, EventArgs.Empty);
+				}
 				return;
 			}
 
@@ -2830,8 +2838,10 @@ public class KeyboardSession : IDisposable
 
 	public void Dispose()
 	{
-		if (_disposed) return;
-		_disposed = true;
+		// Interlocked, not a plain bool check-then-set: Dispose() can legitimately be called
+		// concurrently (e.g. a using block on one thread racing an explicit Dispose() call on
+		// another), and the old unsynchronized check let both callers past the guard.
+		if (Interlocked.CompareExchange(ref _disposedFlag, 1, 0) != 0) return;
 
 		try { StopPolling(); }
 		catch (Exception ex) { _log.LogWarning(ex, "Dispose: StopPolling faulted."); }

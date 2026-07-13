@@ -160,7 +160,10 @@ internal sealed class FakeKeyboardConnection : IKeyboardConnection
 		}
 	}
 
-	public void Dispose() { }
+	/// <summary>Number of times <see cref="Dispose"/> has been called.</summary>
+	public int DisposeCount { get; private set; }
+
+	public void Dispose() => DisposeCount++;
 
 	// ── Packet inspection helpers ─────────────────────────────────────────────
 
