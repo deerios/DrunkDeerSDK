@@ -93,6 +93,34 @@ public class CommonConfigTests
 		Assert.That(_fake.SentPackets[0][8], Is.EqualTo(0));
 	}
 
+	// ── EnableAutoMatch / DisableAutoMatch ────────────────────────────────────
+	// API-7: these send 0xFD 0x0C directly and must also update the _rapidTriggerAutoMatch
+	// mirror, or the next SendCommonConfig() call (from any Enable/Disable RT/Turbo call)
+	// rebuilds its B5 packet from the stale mirror and reverts auto-match on the keyboard.
+
+	[Test]
+	public void EnableAutoMatch_ThenDisableRapidTrigger_KeepsAutoMatchByteSet()
+	{
+		_session.EnableAutoMatch();
+		_fake.SentPackets.Clear();
+
+		_fake.EnqueueAck(0xB5);
+		_session.DisableRapidTrigger();
+		Assert.That(_fake.SentPackets[0][11], Is.EqualTo(1));
+	}
+
+	[Test]
+	public void DisableAutoMatch_ThenEnableRapidTrigger_KeepsAutoMatchByteClear()
+	{
+		_session.EnableAutoMatch();
+		_session.DisableAutoMatch();
+		_fake.SentPackets.Clear();
+
+		_fake.EnqueueAck(0xB5);
+		_session.EnableRapidTrigger();
+		Assert.That(_fake.SentPackets[0][11], Is.EqualTo(0));
+	}
+
 	// ── EnableTurboMode / DisableTurboMode ────────────────────────────────────
 
 	[Test]

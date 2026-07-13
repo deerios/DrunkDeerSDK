@@ -1505,6 +1505,10 @@ public class KeyboardSession : IDisposable
 				"Sensitivity must be 1–254.");
 		EnsureNotPolling();
 		_connection.Send(SetAutoMatchMode.Build(sensitivity));
+		// Keep the mirror in sync: any subsequent SendCommonConfig() call (from EnableRapidTrigger,
+		// DisableRapidTrigger, Enable/DisableTurboMode, ...) rebuilds its B5 packet from this flag,
+		// and would otherwise silently revert auto-match back off on the keyboard.
+		_rapidTriggerAutoMatch = true;
 	}
 
 	/// <summary>Disables Rapid Trigger Auto Match.</summary>
@@ -1512,6 +1516,7 @@ public class KeyboardSession : IDisposable
 	{
 		EnsureNotPolling();
 		_connection.Send(SetAutoMatchMode.Build(255));
+		_rapidTriggerAutoMatch = false;
 	}
 
 	/// <summary>
