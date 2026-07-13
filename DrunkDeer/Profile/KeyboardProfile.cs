@@ -138,7 +138,7 @@ public readonly struct RgbColor
 	public void Deconstruct(out byte r, out byte g, out byte b) => (r, g, b) = (R, G, B);
 }
 
-/// <summary>Per-key colour override, with an optional brightness that overrides the theme-level brightness.</summary>
+/// <summary>Per-key colour override.</summary>
 public sealed class KeyColor
 {
 	/// <summary>Red channel (0-255).</summary>
@@ -152,10 +152,6 @@ public sealed class KeyColor
 	/// <summary>Blue channel (0-255).</summary>
 	[JsonPropertyName("b")]
 	public byte B { get; set; }
-
-	/// <summary>Per-key firmware brightness (0-9). When null, the theme-level <see cref="KeyboardTheme.Brightness"/> is used.</summary>
-	[JsonPropertyName("brightness")]
-	public byte? Brightness { get; set; }
 }
 
 /// <summary>
@@ -165,8 +161,9 @@ public sealed class KeyColor
 /// <remarks>
 /// If <see cref="Keys"/> is null or empty the entire keyboard is set to <see cref="BaseColor"/>.
 /// If <see cref="Keys"/> is non-empty, per-key colours are applied on top; any key not listed
-/// keeps the base colour. Per-key entries may carry their own <see cref="KeyColor.Brightness"/>;
-/// keys without one inherit the theme-level <see cref="Brightness"/>.
+/// keeps the base colour. <see cref="Brightness"/> is a single firmware value applied to the
+/// whole keyboard - the wire format has no per-key brightness, so it cannot be overridden
+/// per key.
 /// </remarks>
 /// <example>
 /// <code>

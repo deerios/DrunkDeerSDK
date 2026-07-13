@@ -8,12 +8,12 @@ namespace DrunkDeer.Protocol;
 /// // Solid red
 /// var theme = new KeyboardThemeBuilder().Base(255, 0, 0).Build();
 ///
-/// // Orange WASD on dark-blue, Escape dimmed
+/// // Orange WASD on dark-blue, Escape in white
 /// var theme = new KeyboardThemeBuilder()
 ///     .Base(0, 0, 40)
 ///     .Brightness(9)
 ///     .Keys([DDKey.W, DDKey.A, DDKey.S, DDKey.D], 255, 140, 0)
-///     .Key(DDKey.Escape, 255, 255, 255, brightness: 3)
+///     .Key(DDKey.Escape, 255, 255, 255)
 ///     .Build();
 /// </code>
 /// </example>
@@ -44,17 +44,17 @@ public sealed class KeyboardThemeBuilder
 		return this;
 	}
 
-	/// <summary>Sets the colour for a single key, with an optional per-key brightness override.</summary>
-	public KeyboardThemeBuilder Key(DDKey key, byte r, byte g, byte b, byte? brightness = null)
+	/// <summary>Sets the colour for a single key.</summary>
+	public KeyboardThemeBuilder Key(DDKey key, byte r, byte g, byte b)
 	{
-		(_keys ??= [])[key.ToString()] = new KeyColor { R = r, G = g, B = b, Brightness = brightness };
+		(_keys ??= [])[key.ToString()] = new KeyColor { R = r, G = g, B = b };
 		return this;
 	}
 
-	/// <summary>Sets the same colour for multiple keys, with an optional per-key brightness override.</summary>
-	public KeyboardThemeBuilder Keys(IEnumerable<DDKey> keys, byte r, byte g, byte b, byte? brightness = null)
+	/// <summary>Sets the same colour for multiple keys.</summary>
+	public KeyboardThemeBuilder Keys(IEnumerable<DDKey> keys, byte r, byte g, byte b)
 	{
-		var color = new KeyColor { R = r, G = g, B = b, Brightness = brightness };
+		var color = new KeyColor { R = r, G = g, B = b };
 		_keys ??= [];
 		foreach (var key in keys)
 			_keys[key.ToString()] = color;
