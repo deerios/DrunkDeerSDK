@@ -147,6 +147,14 @@ internal sealed class FakeKeyboardConnection : IKeyboardConnection
 	/// <summary>Releases a poll thread blocked by <see cref="PauseAfterNextFlush"/>.</summary>
 	public void ResumeAfterFlush() => _flushGate.Set();
 
+	/// <summary>
+	/// Invoked synchronously at the end of every <see cref="FlushReadBuffer"/> call, after the
+	/// queue is cleared. Lets a single-threaded test enqueue "arrives after the flush" responses
+	/// at exactly the right point in a synchronous call, without needing the pause/resume
+	/// machinery below (which exists for the concurrent poll-thread case).
+	/// </summary>
+	public Action? OnFlush;
+
 	/// <summary>Discards any responses currently queued, simulating clearing the OS-level read buffer.</summary>
 	public void FlushReadBuffer()
 	{
@@ -158,6 +166,7 @@ internal sealed class FakeKeyboardConnection : IKeyboardConnection
 			_flushGate.Reset();
 			_flushGate.Wait();
 		}
+		OnFlush?.Invoke();
 	}
 
 	/// <summary>Number of times <see cref="Dispose"/> has been called.</summary>

@@ -1157,6 +1157,13 @@ public class KeyboardSession : IDisposable
 		values.Slice(0, Math.Min(values.Length, HpKeyCount)).CopyTo(normalized);
 		var sectionBytes = new byte[60];
 
+		// WriteKeyPointAcknowledgeHighPrecision.Matches accepts any 0xFD packet, which collides
+		// with 0xFD 0x06 travel frames (TRN-4). If polling just stopped, a straggler travel
+		// packet can still be sitting in the read buffer and get mistaken for this write's ACK,
+		// letting the loop believe the write succeeded while the real ACK (or failure) is never
+		// actually observed. Flush before the first send to clear anything left over.
+		_connection.FlushReadBuffer();
+
 		for (int sec = 0; sec < 5; sec++)
 		{
 			int baseKey = HpSectionBase[sec];
