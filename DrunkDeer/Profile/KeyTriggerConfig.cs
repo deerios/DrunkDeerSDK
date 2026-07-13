@@ -71,7 +71,7 @@ public readonly record struct KeyTriggerConfig
 	// 1 unit = 0.01 mm, so raw = (int)Round(mm × 100).
 	// Stored values are (raw − 1), clamped to [0, 511].
 	private static int MmToRaw(float mm) =>
-		Math.Clamp((int)Math.Round(mm * 100), 1, 512);
+		Math.Clamp((int)Math.Round(mm * 100, MidpointRounding.AwayFromZero), 1, 512);
 
 	/// <summary>
 	/// Creates a <see cref="KeyTriggerConfig"/> from mm-space depths.

@@ -48,7 +48,7 @@ public sealed class DynamicKeystrokeEntry
 	internal const int SlotCount = 32;
 
 	private static byte MmToUnit(float mm) =>
-		(byte)Math.Clamp((int)Math.Round(mm * 10), 0, 255);
+		(byte)Math.Clamp((int)Math.Round(mm * 10, MidpointRounding.AwayFromZero), 0, 255);
 
 	/// <summary>
 	/// Returns a copy of this entry with the four depth thresholds set from mm values.

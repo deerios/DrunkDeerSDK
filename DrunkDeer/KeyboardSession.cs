@@ -952,15 +952,15 @@ public class KeyboardSession : IDisposable
 	}
 
 	internal static byte MmToStandardUnit(float mm) =>
-		(byte)Math.Clamp((int)Math.Round(mm * 10f), 0, 255);
+		(byte)Math.Clamp((int)Math.Round(mm * 10f, MidpointRounding.AwayFromZero), 0, 255);
 
 	internal static byte MmToKunUnit(float mm) =>
-		(byte)Math.Clamp((int)Math.Round(mm * 100f), 0, 255);
+		(byte)Math.Clamp((int)Math.Round(mm * 100f, MidpointRounding.AwayFromZero), 0, 255);
 
 	private byte MmToB6Unit(float mm) =>
 		_precisionMode == PrecisionMode.Kun ? MmToKunUnit(mm) : MmToStandardUnit(mm);
 
-	internal static ushort MmToHighPrecisionUnit(float mm) => (ushort)Math.Clamp((int)Math.Round(mm * 200), 0, 65535);
+	internal static ushort MmToHighPrecisionUnit(float mm) => (ushort)Math.Clamp((int)Math.Round(mm * 200, MidpointRounding.AwayFromZero), 0, 65535);
 
 	private void SetKeyPointUniform(float depthMm,
 		Func<byte, ReadOnlySpan<byte>, byte[]> buildStandard,
@@ -1665,7 +1665,7 @@ public class KeyboardSession : IDisposable
 	{
 		EnsureNotPolling();
 		var block = FetchFuncBlock();
-		block.MacMode = (byte)KeyboardMode.Mac;
+		block.MacMode = (byte)mode;
 		PushFuncBlock(block);
 	}
 
