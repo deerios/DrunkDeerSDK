@@ -9,7 +9,31 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Run code generator
+        run: dotnet run --project DrunkDeer.CodeGen/DrunkDeer.CodeGen.csproj
+
+      - name: Check codegen is up to date
+        run: git diff --exit-code -- DrunkDeer/Generated
+
+      - name: Build
+        run: dotnet build DrunkDeer/DrunkDeer.slnx --nologo
+
+      - name: Test
+        run: dotnet test DrunkDeer/DrunkDeer.slnx --nologo
+
   release:
+    needs: test
     runs-on: ubuntu-latest
 
     steps:

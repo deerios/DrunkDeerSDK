@@ -15,4 +15,8 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\DrunkDeer\DrunkDeer.csproj" />
+  </ItemGroup>
+
 </Project>

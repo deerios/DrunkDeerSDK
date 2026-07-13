@@ -21,7 +21,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="DrunkDeer.Tests" />
     <InternalsVisibleTo Include="DrunkDeer.ProtocolTests" />
     <InternalsVisibleTo Include="DrunkDeer.FeatureTests" />
   </ItemGroup>
