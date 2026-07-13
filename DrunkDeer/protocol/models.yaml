@@ -117,8 +117,6 @@ models:
     name: G65
     capabilities: []
     firmware_overrides:
-      layout_slot_offset: 21
-      rgb_packet_count:   6
       min_depth_mm: 0.2
       max_depth_mm: 3.3
     kun_precision:
@@ -137,8 +135,6 @@ models:
     name: G65 Lite
     capabilities: []
     firmware_overrides:
-      layout_slot_offset: 21
-      rgb_packet_count:   6
       min_depth_mm: 0.2
       max_depth_mm: 3.3
     identities:
@@ -151,8 +147,6 @@ models:
     name: G65 m1
     capabilities: [kun_precision, turbo_mode]
     firmware_overrides:
-      layout_slot_offset: 21
-      rgb_packet_count:   6
       min_depth_mm: 0.2
       max_depth_mm: 2.0
     identities:
@@ -163,8 +157,6 @@ models:
     name: G65 m2
     capabilities: [kun_precision, turbo_mode]
     firmware_overrides:
-      layout_slot_offset: 21
-      rgb_packet_count:   6
       min_depth_mm: 0.2
       max_depth_mm: 2.0
     identities:
@@ -175,8 +167,6 @@ models:
     name: G65 m3
     capabilities: [kun_precision, turbo_mode]
     firmware_overrides:
-      layout_slot_offset: 21
-      rgb_packet_count:   6
       min_depth_mm: 0.2
       max_depth_mm: 2.0
     identities:
@@ -188,7 +178,6 @@ models:
     name: G60
     capabilities: []
     firmware_overrides:
-      rgb_packet_count: 6
       min_depth_mm: 0.2
       max_depth_mm: 3.3
     kun_precision:
@@ -206,7 +195,6 @@ models:
     name: G60 v600
     capabilities: [kun_precision, turbo_mode]
     firmware_overrides:
-      rgb_packet_count: 6
       min_depth_mm: 0.2
       max_depth_mm: 2.0
     identities:

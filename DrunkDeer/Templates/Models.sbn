@@ -48,8 +48,6 @@ public sealed class ModelInfo
     public string       Slug              { get; init; } = "";
     public string       Name              { get; init; } = "";
     public Capabilities Capabilities      { get; init; }
-    public int          LayoutSlotOffset  { get; init; }
-    public int          RgbPacketCount    { get; init; } = 7;
     /// <summary>
     /// Minimum valid actuation/downstroke/upstroke depth in mm for the default precision mode.
     /// </summary>
@@ -88,8 +86,6 @@ public static class ModelRegistry
             Slug             = ModelSlugs.{{ m.const_name }},
             Name             = "{{ m.name }}",
             Capabilities     = {{ m.capabilities_expr }},
-            LayoutSlotOffset = {{ m.layout_slot_offset }},
-            RgbPacketCount   = {{ m.rgb_packet_count }},
             MinDepthMm       = {{ m.min_depth_mm }},
             MaxDepthMm       = {{ m.max_depth_mm }},
             KunPrecisionMinFirmware = {{ m.kun_min_firmware }},

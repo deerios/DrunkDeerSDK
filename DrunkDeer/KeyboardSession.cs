@@ -1740,19 +1740,6 @@ public class KeyboardSession : IDisposable
 			ApplyTheme(profile.Theme);
 	}
 
-	private void ApplyPerKeyDepth(float[] target, Dictionary<string, float> overrides, string fieldName)
-	{
-		foreach (var (name, mm) in overrides)
-		{
-			if (!Enum.TryParse<DDKey>(name, ignoreCase: true, out var key) || !TryGetKeyIndex(key, out int idx))
-			{
-				_log.LogWarning("ApplyProfile: unknown key '{Key}' in {Field}; skipped.", name, fieldName);
-				continue;
-			}
-			target[idx] = mm;
-		}
-	}
-
 	private void ApplyTheme(KeyboardTheme theme)
 	{
 		var (br, bg, bb) = theme.BaseColor;

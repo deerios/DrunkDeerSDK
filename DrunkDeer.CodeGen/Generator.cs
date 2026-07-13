@@ -203,12 +203,8 @@ internal static class Generator
 			? string.Join(" | ", capParts)
 			: "Capabilities.None";
 
-		m.FirmwareOverrides.TryGetValue("layout_slot_offset", out var slotObj);
-		m.FirmwareOverrides.TryGetValue("rgb_packet_count", out var rgbObj);
 		m.FirmwareOverrides.TryGetValue("min_depth_mm", out var minDepthObj);
 		m.FirmwareOverrides.TryGetValue("max_depth_mm", out var maxDepthObj);
-		int slotOffset = slotObj is null ? 0 : Convert.ToInt32(slotObj);
-		int rgbCount = rgbObj is null ? 7 : Convert.ToInt32(rgbObj);
 		float minDepth = minDepthObj is null ? 0.2f : Convert.ToSingle(minDepthObj);
 		float maxDepth = maxDepthObj is null ? 3.3f : Convert.ToSingle(maxDepthObj);
 
@@ -253,8 +249,6 @@ internal static class Generator
 			["const_name"]        = ToPascal(m.Slug),
 			["name"]              = m.Name,
 			["capabilities_expr"] = capsExpr,
-			["layout_slot_offset"]= slotOffset,
-			["rgb_packet_count"]  = rgbCount,
 			["min_depth_mm"]      = $"{minDepth}f",
 			["max_depth_mm"]      = $"{maxDepth}f",
 			["kun_min_firmware"]  = kunMinFirmwareExpr,
