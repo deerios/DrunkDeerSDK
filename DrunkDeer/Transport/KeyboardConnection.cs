@@ -103,7 +103,12 @@ public sealed class KeyboardConnection : IKeyboardConnection
 			byte[]? resp = null;
 			byte[]? lastReceived = null;
 
-			for (int attempt = 0; attempt < 20; attempt++)
+			// KeyboardDiscoverer.OpenFirst now moves on to the next candidate device on handshake
+			// failure, so a false-positive VID/PID match (e.g. a third-party keyboard sharing a
+			// known pair) no longer needs a long retry budget here before the caller can recover -
+			// 8 x 500ms = 4s is enough headroom for a genuine DrunkDeer keyboard that's slow to
+			// respond, without turning one wrong candidate into a ~10s stall per device.
+			for (int attempt = 0; attempt < 8; attempt++)
 			{
 				// drain anything buffered from before this session.
 				transport.FlushReadBuffer();
