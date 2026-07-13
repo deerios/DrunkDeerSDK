@@ -46,7 +46,8 @@ messages:
     payload:
       _reserved:    bytes[2]
       packet_index: u8
-      travel:       i8[59]
+      # Decoded unsigned: full travel is 200 in Kun mode, which doesn't fit i8's range.
+      travel:       u8[59]
     padding_to: 64
 
   WriteActuationPointStandard:

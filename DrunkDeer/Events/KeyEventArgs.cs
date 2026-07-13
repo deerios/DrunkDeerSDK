@@ -11,7 +11,8 @@ public sealed class KeyEventArgs : EventArgs
 
 	/// <summary>
 	/// Raw travel depth at the moment this event fired.
-	/// Standard-precision models: 1 unit = 0.1 mm (signed i8 range).
+	/// Standard-precision models: 1 unit = 0.1 mm (decoded unsigned; full travel in Kun mode
+	/// is 200, which doesn't fit a signed i8).
 	/// High-precision models: 1 unit = 0.005 mm (u16 range, dead-zone below 40).
 	/// </summary>
 	public short Height { get; }

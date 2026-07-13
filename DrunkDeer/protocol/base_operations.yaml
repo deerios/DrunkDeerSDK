@@ -15,7 +15,7 @@ operations:
       Packet index 0 carries travel for layout indices 0-58,
       packet index 1 carries indices 59-117,
       packet index 2 carries indices 118-126.
-      Each travel value is a signed integer where one unit equals 0.1 mm.
+      Each travel value is an unsigned integer where one unit equals 0.1 mm.
     request:        TravelRequest
     response:       TravelResponse
     response_count: 3
@@ -26,7 +26,7 @@ operations:
       One unit of key_values equals 0.1 mm.
       Each request must be acknowledged before the next is sent.
       Packet index 0 carries values for layout indices 0-58,
-      index 1 carries 59-117, index 2 carries 118-125.
+      index 1 carries 59-117, index 2 carries 118-126.
     request:       WriteActuationPointStandard
     response:      WriteKeyPointAcknowledgeStandard
     request_count: 3
@@ -37,7 +37,7 @@ operations:
       One unit of key_values equals 0.1 mm.
       Each request must be acknowledged before the next is sent.
       Packet index 0 carries values for layout indices 0-58,
-      index 1 carries 59-117, index 2 carries 118-125.
+      index 1 carries 59-117, index 2 carries 118-126.
     request:       WriteDownstrokePointStandard
     response:      WriteKeyPointAcknowledgeStandard
     request_count: 3
@@ -48,7 +48,7 @@ operations:
       One unit of key_values equals 0.1 mm.
       Each request must be acknowledged before the next is sent.
       Packet index 0 carries values for layout indices 0-58,
-      index 1 carries 59-117, index 2 carries 118-125.
+      index 1 carries 59-117, index 2 carries 118-126.
     request:       WriteUpstrokePointStandard
     response:      WriteKeyPointAcknowledgeStandard
     request_count: 3
