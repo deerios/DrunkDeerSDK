@@ -17,12 +17,20 @@ internal sealed class HidTransport : IDisposable
 	private readonly HidStream _command;
 	private readonly HidStream? _data;
 
+	// GetMaxInputReportLength/GetMaxOutputReportLength are native calls; the device's report
+	// lengths don't change over the lifetime of a connection, and these are called on every
+	// single Send/Receive (several times per poll frame at ~200 Hz), so cache them once.
+	private readonly int _maxOutputReportLength;
+	private readonly int _maxInputReportLength;
+
 	internal HidTransport(HidDevice device, HidStream command, HidStream? data, ILoggerFactory? loggerFactory = null)
 	{
 		_device  = device;
 		_command = command;
 		_data    = data;
 		_log     = (ILogger?)loggerFactory?.CreateLogger<HidTransport>() ?? NullLogger.Instance;
+		_maxOutputReportLength = device.GetMaxOutputReportLength();
+		_maxInputReportLength  = device.GetMaxInputReportLength();
 	}
 
 	public bool HasDataStream => _data is not null;
@@ -34,7 +42,7 @@ internal sealed class HidTransport : IDisposable
 	/// </summary>
 	public void Send(byte[] packet)
 	{
-		int reportLen = _device.GetMaxOutputReportLength(); // includes the report-ID byte
+		int reportLen = _maxOutputReportLength; // includes the report-ID byte
 		if (packet.Length > reportLen - 1)
 			throw new ArgumentException(
 				$"Packet is {packet.Length} bytes, but this device's max output report only " +
@@ -77,7 +85,7 @@ internal sealed class HidTransport : IDisposable
 			stream.ReadTimeout = 1;
 			try
 			{
-				var tmp = new byte[_device.GetMaxInputReportLength()];
+				var tmp = new byte[_maxInputReportLength];
 				int attempts = 0;
 				while (attempts++ < 32 && stream.Read(tmp, 0, tmp.Length) > 0) { }
 			}
@@ -90,7 +98,7 @@ internal sealed class HidTransport : IDisposable
 	private byte[]? ReadFrom(HidStream stream, int timeoutMs, string label)
 	{
 		stream.ReadTimeout = timeoutMs;
-		var buf = new byte[_device.GetMaxInputReportLength()]; // includes leading report-ID byte
+		var buf = new byte[_maxInputReportLength]; // includes leading report-ID byte
 		int read;
 		try { read = stream.Read(buf, 0, buf.Length); }
 		catch (TimeoutException)
