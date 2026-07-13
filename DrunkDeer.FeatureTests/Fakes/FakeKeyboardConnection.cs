@@ -18,7 +18,7 @@ internal sealed class FakeKeyboardConnection : IKeyboardConnection
 
 	public ModelInfo Model { get; }
 	public string Variant { get; }
-	public byte FirmwareVersion { get; } = 1;
+	public byte FirmwareVersion { get; }
 	public bool HasDataStream { get; } = false;
 	public byte InitialTurboValue { get; } = 0;
 	public byte InitialRapidTriggerEnabled { get; } = 0;
@@ -26,10 +26,16 @@ internal sealed class FakeKeyboardConnection : IKeyboardConnection
 	public byte InitialRapidTriggerAutoMatch { get; } = 0;
 
 	/// <param name="model">Model to advertise; defaults to A75 (standard precision).</param>
-	public FakeKeyboardConnection(ModelInfo? model = null)
+	/// <param name="firmwareVersion">
+	/// Firmware version to advertise; defaults to 1. Bumping this to/above a model's
+	/// <see cref="ModelInfo.KunPrecisionMinFirmware"/> (e.g. 35 for the base A75) upgrades
+	/// an otherwise-Standard-precision fake to Kun precision, mirroring real hardware.
+	/// </param>
+	public FakeKeyboardConnection(ModelInfo? model = null, byte firmwareVersion = 1)
 	{
-		Model   = model ?? ModelRegistry.GetInfo(ModelSlugs.A75)!;
-		Variant = "ansi";
+		Model           = model ?? ModelRegistry.GetInfo(ModelSlugs.A75)!;
+		Variant         = "ansi";
+		FirmwareVersion = firmwareVersion;
 	}
 
 	// ── Response queue helpers ────────────────────────────────────────────────

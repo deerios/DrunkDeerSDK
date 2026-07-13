@@ -13,12 +13,23 @@ public class KeyTriggerTests
 	[SetUp]
 	public void SetUp()
 	{
-		_fake    = new FakeKeyboardConnection();
+		// KeyTrigger read/write goes through the FuncBlock gateway (0x55/0xA0-0xA1), which
+		// requires Kun or HighPrecision. G65 m1 is always Kun-precision.
+		_fake    = new FakeKeyboardConnection(ModelRegistry.GetInfo(ModelSlugs.G65M1));
 		_session = new KeyboardSession(_fake);
 	}
 
 	[TearDown]
 	public void TearDown() => _session.Dispose();
+
+	[Test]
+	public void WriteKeyTriggers_StandardPrecisionA75_Throws()
+	{
+		using var fake    = new FakeKeyboardConnection(); // default A75, fw 1 -> Standard precision
+		using var session = new KeyboardSession(fake);
+		Assert.Throws<NotSupportedException>(() =>
+			session.WriteKeyTriggers(Enumerable.Repeat(KeyTriggerConfig.Default, 128).ToArray()));
+	}
 
 	// 128 keys × 8 bytes = 1024 bytes -> ceil(1024/56) = 19 chunks
 	private const int TriggerBytes = 128 * 8;

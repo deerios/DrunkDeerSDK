@@ -20,7 +20,10 @@ public class FuncBlockTests
 	[SetUp]
 	public void SetUp()
 	{
-		_fake    = new FakeKeyboardConnection();
+		// G65 m1 is always Kun-precision so it has FuncBlock/TurboMode support without
+		// LogoLight or SideLight, keeping the generic FuncBlock tests independent of the
+		// logo/side gate tests below (which need their own capable models).
+		_fake    = new FakeKeyboardConnection(ModelRegistry.GetInfo(ModelSlugs.G65M1));
 		_session = new KeyboardSession(_fake);
 	}
 
@@ -30,11 +33,21 @@ public class FuncBlockTests
 	/// <summary>
 	/// Reassembles the 64-byte block pushed back to the keyboard from the 0x55/0x06 write chunks.
 	/// </summary>
-	private byte[] CaptureWrittenBlock()
+	private static byte[] CaptureWrittenBlock(FakeKeyboardConnection fake)
 	{
-		var data = _fake.ReassembleGatewayWriteData(subCmd: 0x06);
+		var data = fake.ReassembleGatewayWriteData(subCmd: 0x06);
 		Assert.That(data, Has.Length.EqualTo(64), "FuncBlock push should write exactly 64 bytes");
 		return data;
+	}
+
+	private byte[] CaptureWrittenBlock() => CaptureWrittenBlock(_fake);
+
+	/// <summary>Creates a fresh fake/session pair for a specific model, for tests that need
+	/// capabilities (LogoLight, SideLight) not present on the shared <see cref="_fake"/> fixture.</summary>
+	private static (FakeKeyboardConnection fake, KeyboardSession session) NewSession(string modelSlug)
+	{
+		var fake = new FakeKeyboardConnection(ModelRegistry.GetInfo(modelSlug));
+		return (fake, new KeyboardSession(fake));
 	}
 
 	// ── SetKeyboardMode ───────────────────────────────────────────────────────
@@ -150,6 +163,9 @@ public class FuncBlockTests
 	[Test]
 	public void EnableTurboMode_SetsBit0OfByte7()
 	{
+		// EnableTurboMode sends CommonConfig (needs a 0xB5 ACK) first, then - because G65 m1
+		// is TurboMode-capable - does a FuncBlock read-modify-write.
+		_fake.EnqueueAck(0xB5);
 		_fake.EnqueueFuncBlockCycle();
 		_session.EnableTurboMode();
 		var block = CaptureWrittenBlock();
@@ -161,6 +177,7 @@ public class FuncBlockTests
 	{
 		var existing = new byte[64];
 		existing[7] = 0x01; // TurboMode on
+		_fake.EnqueueAck(0xB5);
 		_fake.EnqueueFuncBlockCycle(existing);
 		_session.DisableTurboMode();
 		var block = CaptureWrittenBlock();
@@ -282,86 +299,139 @@ public class FuncBlockTests
 	}
 
 	// ── SetLogoLightPreset / SetLogoLightOff / SetLogoLightColor ─────────────
+	// These need a model with LogoLight capability (A75 Ultra), which the shared G65 m1
+	// fixture above doesn't have, so each test builds its own fake/session.
 
 	[Test]
 	public void SetLogoLightPreset_WritesEffectBrightnessSpeedToBytes24_26()
 	{
-		_fake.EnqueueFuncBlockCycle();
-		_session.SetLogoLightPreset(effect: LightPreset.WaveSpectrum, brightness: 8, speed: 3);
-		var block = CaptureWrittenBlock();
-		Assert.Multiple(() =>
+		var (fake, session) = NewSession(ModelSlugs.A75Ultra);
+		using (session)
 		{
-			Assert.That(block[24], Is.EqualTo(2)); // LogoLightEffect
-			Assert.That(block[25], Is.EqualTo(8)); // LogoLightBrightness
-			Assert.That(block[26], Is.EqualTo(3)); // LogoLightSpeed
-		});
+			fake.EnqueueFuncBlockCycle();
+			session.SetLogoLightPreset(effect: LightPreset.WaveSpectrum, brightness: 8, speed: 3);
+			var block = CaptureWrittenBlock(fake);
+			Assert.Multiple(() =>
+			{
+				Assert.That(block[24], Is.EqualTo(2)); // LogoLightEffect
+				Assert.That(block[25], Is.EqualTo(8)); // LogoLightBrightness
+				Assert.That(block[26], Is.EqualTo(3)); // LogoLightSpeed
+			});
+		}
 	}
 
 	[Test]
 	public void SetLogoLightOff_WritesZeroEffectToByte24()
 	{
-		var existing = new byte[64];
-		existing[24] = 3; // logo effect on
-		_fake.EnqueueFuncBlockCycle(existing);
-		_session.SetLogoLightOff();
-		var block = CaptureWrittenBlock();
-		Assert.That(block[24], Is.EqualTo(0));
+		var (fake, session) = NewSession(ModelSlugs.A75Ultra);
+		using (session)
+		{
+			var existing = new byte[64];
+			existing[24] = 3; // logo effect on
+			fake.EnqueueFuncBlockCycle(existing);
+			session.SetLogoLightOff();
+			var block = CaptureWrittenBlock(fake);
+			Assert.That(block[24], Is.EqualTo(0));
+		}
 	}
 
 	[Test]
 	public void SetLogoLightColor_WritesSingleColorFlagAndRgbToBytes27_31()
 	{
-		_fake.EnqueueFuncBlockCycle();
-		_session.SetLogoLightColor(r: 0x10, g: 0x20, b: 0x30);
-		var block = CaptureWrittenBlock();
-		Assert.Multiple(() =>
+		var (fake, session) = NewSession(ModelSlugs.A75Ultra);
+		using (session)
 		{
-			Assert.That(block[27], Is.EqualTo(0x00)); // LogoLightSingleColor: 0 = single-colour on
-			Assert.That(block[29], Is.EqualTo(0x10));     // R
-			Assert.That(block[30], Is.EqualTo(0x20));     // G
-			Assert.That(block[31], Is.EqualTo(0x30));     // B
-		});
+			fake.EnqueueFuncBlockCycle();
+			session.SetLogoLightColor(r: 0x10, g: 0x20, b: 0x30);
+			var block = CaptureWrittenBlock(fake);
+			Assert.Multiple(() =>
+			{
+				Assert.That(block[27], Is.EqualTo(0x00)); // LogoLightSingleColor: 0 = single-colour on
+				Assert.That(block[29], Is.EqualTo(0x10));     // R
+				Assert.That(block[30], Is.EqualTo(0x20));     // G
+				Assert.That(block[31], Is.EqualTo(0x30));     // B
+			});
+		}
+	}
+
+	[Test]
+	public void SetLogoLightPreset_ModelWithoutLogoLight_Throws()
+	{
+		// Default fixture (G65 m1) has neither LogoLight nor SideLight.
+		Assert.Throws<NotSupportedException>(() =>
+			_session.SetLogoLightPreset(effect: LightPreset.WaveSpectrum, brightness: 8, speed: 3));
 	}
 
 	// ── SetSideLightPreset / SetSideLightOff / SetSideLightColor ─────────────
+	// These need a model with SideLight capability (X60 Future).
 
 	[Test]
 	public void SetSideLightPreset_WritesEffectBrightnessSpeedToBytes32_34()
 	{
-		_fake.EnqueueFuncBlockCycle();
-		_session.SetSideLightPreset(effect: LightPreset.Breath, brightness: 6, speed: 2);
-		var block = CaptureWrittenBlock();
-		Assert.Multiple(() =>
+		var (fake, session) = NewSession(ModelSlugs.X60Future);
+		using (session)
 		{
-			Assert.That(block[32], Is.EqualTo(4)); // SideLightEffect
-			Assert.That(block[33], Is.EqualTo(6)); // SideLightBrightness
-			Assert.That(block[34], Is.EqualTo(2)); // SideLightSpeed
-		});
+			fake.EnqueueFuncBlockCycle();
+			session.SetSideLightPreset(effect: LightPreset.Breath, brightness: 6, speed: 2);
+			var block = CaptureWrittenBlock(fake);
+			Assert.Multiple(() =>
+			{
+				Assert.That(block[32], Is.EqualTo(4)); // SideLightEffect
+				Assert.That(block[33], Is.EqualTo(6)); // SideLightBrightness
+				Assert.That(block[34], Is.EqualTo(2)); // SideLightSpeed
+			});
+		}
 	}
 
 	[Test]
 	public void SetSideLightOff_WritesZeroEffectToByte32()
 	{
-		var existing = new byte[64];
-		existing[32] = 2; // side effect on
-		_fake.EnqueueFuncBlockCycle(existing);
-		_session.SetSideLightOff();
-		var block = CaptureWrittenBlock();
-		Assert.That(block[32], Is.EqualTo(0));
+		var (fake, session) = NewSession(ModelSlugs.X60Future);
+		using (session)
+		{
+			var existing = new byte[64];
+			existing[32] = 2; // side effect on
+			fake.EnqueueFuncBlockCycle(existing);
+			session.SetSideLightOff();
+			var block = CaptureWrittenBlock(fake);
+			Assert.That(block[32], Is.EqualTo(0));
+		}
 	}
 
 	[Test]
 	public void SetSideLightColor_WritesSingleColorFlagAndRgbToBytes35_39()
 	{
-		_fake.EnqueueFuncBlockCycle();
-		_session.SetSideLightColor(r: 0xAA, g: 0xBB, b: 0xCC);
-		var block = CaptureWrittenBlock();
-		Assert.Multiple(() =>
+		var (fake, session) = NewSession(ModelSlugs.X60Future);
+		using (session)
 		{
-			Assert.That(block[35], Is.EqualTo(0x00)); // SideLightSingleColor: 0 = single-colour on
-			Assert.That(block[37], Is.EqualTo(0xAA));     // R
-			Assert.That(block[38], Is.EqualTo(0xBB));     // G
-			Assert.That(block[39], Is.EqualTo(0xCC));     // B
-		});
+			fake.EnqueueFuncBlockCycle();
+			session.SetSideLightColor(r: 0xAA, g: 0xBB, b: 0xCC);
+			var block = CaptureWrittenBlock(fake);
+			Assert.Multiple(() =>
+			{
+				Assert.That(block[35], Is.EqualTo(0x00)); // SideLightSingleColor: 0 = single-colour on
+				Assert.That(block[37], Is.EqualTo(0xAA));     // R
+				Assert.That(block[38], Is.EqualTo(0xBB));     // G
+				Assert.That(block[39], Is.EqualTo(0xCC));     // B
+			});
+		}
+	}
+
+	[Test]
+	public void SetSideLightPreset_ModelWithoutSideLight_Throws()
+	{
+		// Default fixture (G65 m1) has neither LogoLight nor SideLight.
+		Assert.Throws<NotSupportedException>(() =>
+			_session.SetSideLightPreset(effect: LightPreset.Breath, brightness: 6, speed: 2));
+	}
+
+	// ── FuncBlock gate coverage ───────────────────────────────────────────────
+
+	[Test]
+	public void SetKeyboardMode_StandardPrecisionA75_Throws()
+	{
+		using var fake    = new FakeKeyboardConnection(); // default A75, fw 1 -> Standard precision
+		using var session = new KeyboardSession(fake);
+		Assert.Throws<NotSupportedException>(() => session.SetKeyboardMode(KeyboardMode.Mac));
 	}
 }

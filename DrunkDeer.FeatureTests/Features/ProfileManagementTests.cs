@@ -13,12 +13,22 @@ public class ProfileManagementTests
 	[SetUp]
 	public void SetUp()
 	{
-		_fake    = new FakeKeyboardConnection();
+		// Profile switch/pull/push/capture/copy all go through the FuncBlock gateway, which
+		// requires Kun or HighPrecision. G65 m1 is always Kun-precision.
+		_fake    = new FakeKeyboardConnection(ModelRegistry.GetInfo(ModelSlugs.G65M1));
 		_session = new KeyboardSession(_fake);
 	}
 
 	[TearDown]
 	public void TearDown() => _session.Dispose();
+
+	[Test]
+	public void SwitchProfile_StandardPrecisionA75_Throws()
+	{
+		using var fake    = new FakeKeyboardConnection(); // default A75, fw 1 -> Standard precision
+		using var session = new KeyboardSession(fake);
+		Assert.Throws<NotSupportedException>(() => session.SwitchProfile(0));
+	}
 
 	// Sub-command byte positions within 0x55 gateway packets
 	private const byte SwitchProfileCmd = 0x0E;

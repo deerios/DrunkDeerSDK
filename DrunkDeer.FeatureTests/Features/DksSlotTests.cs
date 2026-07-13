@@ -13,12 +13,23 @@ public class DksSlotTests
 	[SetUp]
 	public void SetUp()
 	{
-		_fake    = new FakeKeyboardConnection();
+		// DKS/MultiTap/Toggle read/write all go through the FuncBlock gateway, which
+		// requires Kun or HighPrecision. G65 m1 is always Kun-precision.
+		_fake    = new FakeKeyboardConnection(ModelRegistry.GetInfo(ModelSlugs.G65M1));
 		_session = new KeyboardSession(_fake);
 	}
 
 	[TearDown]
 	public void TearDown() => _session.Dispose();
+
+	[Test]
+	public void WriteDynamicKeystrokeEntries_StandardPrecisionA75_Throws()
+	{
+		using var fake    = new FakeKeyboardConnection(); // default A75, fw 1 -> Standard precision
+		using var session = new KeyboardSession(fake);
+		Assert.Throws<NotSupportedException>(() =>
+			session.WriteDynamicKeystrokeEntries(Enumerable.Range(0, 32).Select(_ => new DynamicKeystrokeEntry()).ToArray()));
+	}
 
 	private const int DksBytes = 768;
 	private const int DksChunks = 14;

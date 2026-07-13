@@ -13,12 +13,23 @@ public class MacroTests
 	[SetUp]
 	public void SetUp()
 	{
-		_fake    = new FakeKeyboardConnection();
+		// Macro slot read/write goes through the FuncBlock gateway, which requires Kun or
+		// HighPrecision. G65 m1 is always Kun-precision.
+		_fake    = new FakeKeyboardConnection(ModelRegistry.GetInfo(ModelSlugs.G65M1));
 		_session = new KeyboardSession(_fake);
 	}
 
 	[TearDown]
 	public void TearDown() => _session.Dispose();
+
+	[Test]
+	public void WriteMacroSlots_StandardPrecisionA75_Throws()
+	{
+		using var fake    = new FakeKeyboardConnection(); // default A75, fw 1 -> Standard precision
+		using var session = new KeyboardSession(fake);
+		Assert.Throws<NotSupportedException>(() =>
+			session.WriteMacroSlots(new MacroAction[MacroAction.SlotCount][]));
+	}
 
 	private const int MacroBytes = MacroAction.BlockSize; // 2048
 	private const int MacroChunks = (MacroBytes + 55) / 56; // 37

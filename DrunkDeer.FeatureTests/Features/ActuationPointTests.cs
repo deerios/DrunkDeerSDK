@@ -70,11 +70,11 @@ public class ActuationPointTests
 	public void SetActuationPoint_Uniform_Packet2CarriesKeys118To126()
 	{
 		_fake.EnqueueStandardKeyPointAcks();
-		_session.SetActuationPoint(3.8f); // 3.8 × 10 = 38
+		_session.SetActuationPoint(3.0f); // 3.0 × 10 = 30; within A75's [0.2, 3.3] mm range
 		var pkt2 = _fake.SentPackets[2];
 		Assert.That(pkt2[3], Is.EqualTo(2)); // packet index 2
 		for (int i = 0; i < 9; i++)
-			Assert.That(pkt2[4 + i], Is.EqualTo(38), $"key {118 + i} in packet 2");
+			Assert.That(pkt2[4 + i], Is.EqualTo(30), $"key {118 + i} in packet 2");
 	}
 
 	// ── SetActuationPoints (per-key profile) ─────────────────────────────────

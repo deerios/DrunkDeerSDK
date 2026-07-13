@@ -13,18 +13,30 @@ public class KeyMapTests
 	[SetUp]
 	public void SetUp()
 	{
-		_fake    = new FakeKeyboardConnection();
+		// KeyMap read/write goes through the FuncBlock gateway (0x55/0x07-0x09), which
+		// requires Kun or HighPrecision. G65 m1 is always Kun-precision.
+		_fake    = new FakeKeyboardConnection(ModelRegistry.GetInfo(ModelSlugs.G65M1));
 		_session = new KeyboardSession(_fake);
 	}
 
 	[TearDown]
 	public void TearDown() => _session.Dispose();
 
+	[Test]
+	public void WriteKeyMap_StandardPrecisionA75_Throws()
+	{
+		using var fake    = new FakeKeyboardConnection(); // default A75, fw 1 -> Standard precision
+		using var session = new KeyboardSession(fake);
+		Assert.Throws<NotSupportedException>(() => session.WriteKeyMap(new UserKey[128]));
+	}
+
 	// 128 keys × 3 bytes = 384 bytes -> ceil(384/56) = 7 chunks
 	private const int KeyMapBytes = 128 * 3;
 	private const int KeyMapChunks = 7; // ceil(384 / 56)
-	private const byte ReadUserCmd = 0x08;
-	private const byte ReadDefCmd = 0x07;
+	// ReadKeyMap (user map) actually sends subcommand 0x07; ReadDefaultKeyMap sends 0x08
+	// (see KeyboardSession.ReadKeyMap/ReadDefaultKeyMap).
+	private const byte ReadUserCmd = 0x07;
+	private const byte ReadDefCmd = 0x08;
 	private const byte WriteCmd = 0x09;
 
 	// ── WriteKeyMap ───────────────────────────────────────────────────────────
@@ -134,7 +146,7 @@ public class KeyMapTests
 	}
 
 	[Test]
-	public void ReadKeyMap_UsesSubcommand0x08()
+	public void ReadKeyMap_UsesSubcommand0x07()
 	{
 		_fake.EnqueueGatewayRead(new byte[KeyMapBytes]);
 		_session.ReadKeyMap();
@@ -143,7 +155,7 @@ public class KeyMapTests
 	}
 
 	[Test]
-	public void ReadDefaultKeyMap_UsesSubcommand0x07()
+	public void ReadDefaultKeyMap_UsesSubcommand0x08()
 	{
 		_fake.EnqueueGatewayRead(new byte[KeyMapBytes]);
 		_session.ReadDefaultKeyMap();
