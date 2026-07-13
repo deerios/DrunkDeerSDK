@@ -2056,6 +2056,12 @@ public class KeyboardSession : IDisposable
 	//   Read  checksum = (addr_lo + addr_hi + len)                   & 0xFF
 	//   Write checksum = (len + addr_lo + addr_hi + is_last + Σdata) & 0xFF
 
+	// PROTO-1: the reply's echoed sub-command/address/length (bytes 1-7 of the 0xAA response,
+	// currently unread/treated as reserved) are never compared against what was requested, so a
+	// stale or reordered gateway response would reassemble into the wrong offset of `result`
+	// with no error - subtle profile-data corruption on read. Fixing this requires a capture of
+	// the real echo layout (which fields are at which offsets) to add to ExtendedGatewayResponse
+	// in the protocol YAML and validate per chunk; left as unverified/undone here.
 	private byte[] ReadExtendedGateway(byte subCmd, int baseAddr, int totalBytes)
 	{
 		EnsureHasFuncBlock();
@@ -2116,6 +2122,13 @@ public class KeyboardSession : IDisposable
 				"Brightness must be 0–9.");
 	}
 
+	// PROTO-3: the YAML documents the wire range for light_speed/logo_light_speed/
+	// side_light_speed as raw 0-4, *inverted* (0 = fastest, 4 = slowest), but this validates and
+	// passes through 0-9 unchanged - so speed: 9 writes an out-of-range raw byte, and higher
+	// "faster" numbers actually animate slower on the wire. Deciding the right fix (clamp/rescale
+	// 0-9 -> 0-4 inverted here, or change the public unit to 0-4 and teach the generator an
+	// inverted-range YAML annotation) needs confirming the 0-4 range against a capture first;
+	// left unverified/undone here rather than guessing at the transform.
 	private static void ValidateSpeed(byte speed)
 	{
 		if (speed > 9)
