@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using DrunkDeer.Protocol;
 
 namespace DrunkDeer.FeatureTests.Fakes;
@@ -6,10 +7,14 @@ namespace DrunkDeer.FeatureTests.Fakes;
 /// Test double for <see cref="IKeyboardConnection"/>.
 /// Pre-queue responses via <see cref="EnqueueResponse"/> or the gateway helpers;
 /// inspect what was transmitted via <see cref="SentPackets"/>.
+/// Uses a thread-safe queue since <see cref="KeyboardSession"/> polls on a background thread -
+/// tests that exercise <c>StartPolling</c> may need to enqueue responses concurrently.
 /// </summary>
 internal sealed class FakeKeyboardConnection : IKeyboardConnection
 {
-	private readonly Queue<byte[]> _responses = new();
+	private readonly ConcurrentQueue<byte[]?> _responses = new();
+	private readonly ManualResetEventSlim _flushGate = new(initialState: true);
+	private volatile bool _pauseNextFlush;
 
 	/// <summary>All packets passed to <see cref="Send"/> or <see cref="SendAndReceive"/>, in order.</summary>
 	public List<byte[]> SentPackets { get; } = [];
@@ -42,6 +47,14 @@ internal sealed class FakeKeyboardConnection : IKeyboardConnection
 
 	/// <summary>Enqueues a raw response returned by the next <see cref="SendAndReceive"/> or <see cref="ReceiveCommand"/> call.</summary>
 	public void EnqueueResponse(byte[] response) => _responses.Enqueue(response);
+
+	/// <summary>
+	/// Enqueues a simulated read timeout: the next <see cref="ReceiveCommand"/> call returns
+	/// <see langword="null"/>, as if no packet arrived within the timeout window. Distinct from
+	/// an empty queue (which also returns <see langword="null"/>) so that later-enqueued packets
+	/// aren't returned early - useful for scripting a dropped-frame retry sequence.
+	/// </summary>
+	public void EnqueueTimeout() => _responses.Enqueue(null);
 
 	/// <summary>Enqueues a minimal 64-byte packet whose first byte is <paramref name="firstByte"/>.</summary>
 	public void EnqueueAck(byte firstByte)
@@ -107,20 +120,45 @@ internal sealed class FakeKeyboardConnection : IKeyboardConnection
 	// ── IKeyboardConnection transport ─────────────────────────────────────────
 
 	public byte[]? Receive(int timeoutMs = 1000) =>
-		_responses.Count > 0 ? _responses.Dequeue() : null;
+		_responses.TryDequeue(out var resp) ? resp : null;
 
 	public void Send(byte[] packet) => SentPackets.Add(packet);
 
 	public byte[]? SendAndReceive(byte[] packet, int timeoutMs = 1000)
 	{
 		SentPackets.Add(packet);
-		return _responses.Count > 0 ? _responses.Dequeue() : null;
+		return _responses.TryDequeue(out var resp) ? resp : null;
 	}
 
 	public byte[]? ReceiveCommand(int timeoutMs = 1000) =>
-		_responses.Count > 0 ? _responses.Dequeue() : null;
+		_responses.TryDequeue(out var resp) ? resp : null;
 
-	public void FlushReadBuffer() { }
+	/// <summary>Number of times <see cref="FlushReadBuffer"/> has been called.</summary>
+	public int FlushCount { get; private set; }
+
+	/// <summary>
+	/// Arranges for the next <see cref="FlushReadBuffer"/> call to block the calling (poll) thread
+	/// until <see cref="ResumeAfterFlush"/> is called, after clearing the queue. Lets a test
+	/// deterministically enqueue "arrives after the flush" packets with no race against the poll
+	/// loop immediately consuming (and re-flushing) them first.
+	/// </summary>
+	public void PauseAfterNextFlush() => _pauseNextFlush = true;
+
+	/// <summary>Releases a poll thread blocked by <see cref="PauseAfterNextFlush"/>.</summary>
+	public void ResumeAfterFlush() => _flushGate.Set();
+
+	/// <summary>Discards any responses currently queued, simulating clearing the OS-level read buffer.</summary>
+	public void FlushReadBuffer()
+	{
+		FlushCount++;
+		_responses.Clear();
+		if (_pauseNextFlush)
+		{
+			_pauseNextFlush = false;
+			_flushGate.Reset();
+			_flushGate.Wait();
+		}
+	}
 
 	public void Dispose() { }
 

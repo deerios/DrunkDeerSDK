@@ -533,7 +533,17 @@ public class KeyboardSession : IDisposable
 				{
 					if (!KeyTravelHighPrecision.Matches(buf)) { retries++; continue; }
 					int slot = FirstEmpty(gotPkt);
-					if (slot < 0) { retries++; continue; }
+					if (slot < 0)
+					{
+						// HP packets carry no section id, so an extra packet for an already-full frame
+						// means we're desynced (e.g. a stale packet from a prior dropped frame). Restart
+						// frame collection from a clean buffer rather than keeping the misaligned state.
+						_log.LogDebug("PollLoop: unexpected extra HP packet, resyncing.");
+						Array.Clear(gotPkt, 0, frameCount);
+						_connection.FlushReadBuffer();
+						retries++;
+						continue;
+					}
 					packets[slot] = buf;
 					gotPkt[slot]  = true;
 				}
@@ -563,6 +573,11 @@ public class KeyboardSession : IDisposable
 				droppedFrames++;
 				_log.LogDebug("PollLoop: dropped frame #{F} (retries={R})",
 					totalFrames + droppedFrames, retries);
+				// Any packets still in flight for this timed-out request belong to a frame we're
+				// abandoning. Without this flush, stale packets arrive first on the next request
+				// and get assigned to the wrong slots by FirstEmpty - since HP packets carry no
+				// section id, that misassignment never self-corrects and persists for the session.
+				_connection.FlushReadBuffer();
 				continue;
 			}
 
