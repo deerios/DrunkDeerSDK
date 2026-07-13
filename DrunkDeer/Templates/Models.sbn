@@ -115,6 +115,17 @@ public static class ModelRegistry
         => InfoBySlug.TryGetValue(slug, out var info) ? info : null;
 }
 
+/// <summary>
+/// Implemented by every model marker type. Lets <see cref="KeyboardSession{TModel}"/> compare
+/// the type argument's model slug against the slug of the keyboard actually connected at
+/// runtime, so a mismatch (e.g. <c>KeyboardSession&lt;A75Ultra&gt;.OpenFirst()</c> with a plain
+/// A75 plugged in) throws instead of silently branding the wrong hardware.
+/// </summary>
+public interface IModelMarker
+{
+    static abstract string Slug { get; }
+}
+
 // ── Model marker types ──────────────────────────────────────────────────────
 // Compile-time phantom types used as the TModel type argument of
 // KeyboardSession<TModel>. Each class implements only the capability interfaces
@@ -123,9 +134,15 @@ public static class ModelRegistry
 {{- for m in models }}
 {{- if m.interfaces_list != "" }}
 /// <summary>Model marker type for {{ m.name }}. Implements: {{ m.interfaces_list }}.</summary>
-public sealed class {{ m.const_name }} : {{ m.interfaces_list }} { }
+public sealed class {{ m.const_name }} : IModelMarker, {{ m.interfaces_list }}
+{
+    public static string Slug => ModelSlugs.{{ m.const_name }};
+}
 {{- else }}
 /// <summary>Model marker type for {{ m.name }}.</summary>
-public sealed class {{ m.const_name }} { }
+public sealed class {{ m.const_name }} : IModelMarker
+{
+    public static string Slug => ModelSlugs.{{ m.const_name }};
+}
 {{- end }}
 {{- end }}

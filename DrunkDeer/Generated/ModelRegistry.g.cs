@@ -294,35 +294,88 @@ public static class ModelRegistry
         => InfoBySlug.TryGetValue(slug, out var info) ? info : null;
 }
 
+/// <summary>
+/// Implemented by every model marker type. Lets <see cref="KeyboardSession{TModel}"/> compare
+/// the type argument's model slug against the slug of the keyboard actually connected at
+/// runtime, so a mismatch (e.g. <c>KeyboardSession&lt;A75Ultra&gt;.OpenFirst()</c> with a plain
+/// A75 plugged in) throws instead of silently branding the wrong hardware.
+/// </summary>
+public interface IModelMarker
+{
+    static abstract string Slug { get; }
+}
+
 // ── Model marker types ──────────────────────────────────────────────────────
 // Compile-time phantom types used as the TModel type argument of
 // KeyboardSession<TModel>. Each class implements only the capability interfaces
 // its hardware actually supports, so intellisense gates methods accordingly.
 /// <summary>Model marker type for A75.</summary>
-public sealed class A75 { }
+public sealed class A75 : IModelMarker
+{
+    public static string Slug => ModelSlugs.A75;
+}
 /// <summary>Model marker type for A75 Pro.</summary>
-public sealed class A75Pro { }
+public sealed class A75Pro : IModelMarker
+{
+    public static string Slug => ModelSlugs.A75Pro;
+}
 /// <summary>Model marker type for A75 Ultra. Implements: IHasHighPrecision, IHasTurboMode, IHasLogoLight.</summary>
-public sealed class A75Ultra : IHasHighPrecision, IHasTurboMode, IHasLogoLight { }
+public sealed class A75Ultra : IModelMarker, IHasHighPrecision, IHasTurboMode, IHasLogoLight
+{
+    public static string Slug => ModelSlugs.A75Ultra;
+}
 /// <summary>Model marker type for A75 Master. Implements: IHasHighPrecision, IHasTurboMode.</summary>
-public sealed class A75Master : IHasHighPrecision, IHasTurboMode { }
+public sealed class A75Master : IModelMarker, IHasHighPrecision, IHasTurboMode
+{
+    public static string Slug => ModelSlugs.A75Master;
+}
 /// <summary>Model marker type for G75.</summary>
-public sealed class G75 { }
+public sealed class G75 : IModelMarker
+{
+    public static string Slug => ModelSlugs.G75;
+}
 /// <summary>Model marker type for G75 JP.</summary>
-public sealed class G75Jp { }
+public sealed class G75Jp : IModelMarker
+{
+    public static string Slug => ModelSlugs.G75Jp;
+}
 /// <summary>Model marker type for G65.</summary>
-public sealed class G65 { }
+public sealed class G65 : IModelMarker
+{
+    public static string Slug => ModelSlugs.G65;
+}
 /// <summary>Model marker type for G65 Lite.</summary>
-public sealed class G65Lite { }
+public sealed class G65Lite : IModelMarker
+{
+    public static string Slug => ModelSlugs.G65Lite;
+}
 /// <summary>Model marker type for G65 m1. Implements: IHasTurboMode.</summary>
-public sealed class G65M1 : IHasTurboMode { }
+public sealed class G65M1 : IModelMarker, IHasTurboMode
+{
+    public static string Slug => ModelSlugs.G65M1;
+}
 /// <summary>Model marker type for G65 m2. Implements: IHasTurboMode.</summary>
-public sealed class G65M2 : IHasTurboMode { }
+public sealed class G65M2 : IModelMarker, IHasTurboMode
+{
+    public static string Slug => ModelSlugs.G65M2;
+}
 /// <summary>Model marker type for G65 m3. Implements: IHasTurboMode.</summary>
-public sealed class G65M3 : IHasTurboMode { }
+public sealed class G65M3 : IModelMarker, IHasTurboMode
+{
+    public static string Slug => ModelSlugs.G65M3;
+}
 /// <summary>Model marker type for G60.</summary>
-public sealed class G60 { }
+public sealed class G60 : IModelMarker
+{
+    public static string Slug => ModelSlugs.G60;
+}
 /// <summary>Model marker type for G60 v600. Implements: IHasTurboMode.</summary>
-public sealed class G60V600 : IHasTurboMode { }
+public sealed class G60V600 : IModelMarker, IHasTurboMode
+{
+    public static string Slug => ModelSlugs.G60V600;
+}
 /// <summary>Model marker type for X60 Future. Implements: IHasHighPrecision, IHasTurboMode, IHasSideLight.</summary>
-public sealed class X60Future : IHasHighPrecision, IHasTurboMode, IHasSideLight { }
+public sealed class X60Future : IModelMarker, IHasHighPrecision, IHasTurboMode, IHasSideLight
+{
+    public static string Slug => ModelSlugs.X60Future;
+}
