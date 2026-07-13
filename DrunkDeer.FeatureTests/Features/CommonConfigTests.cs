@@ -246,4 +246,16 @@ public class CommonConfigTests
 			Assert.That(pkt[5], Is.EqualTo((byte)idxD));
 		});
 	}
+
+	// PROTO-2: raw layout indices were cast to byte unvalidated - an out-of-range index would
+	// silently wrap (e.g. 256 -> 0) instead of being rejected.
+	[TestCase(128, 0)]
+	[TestCase(0, 128)]
+	[TestCase(-1, 0)]
+	[TestCase(0, -1)]
+	public void ConfigureLastWinPairs_Raw_OutOfRangeIndex_Throws(int keyA, int keyB)
+	{
+		Assert.Throws<ArgumentOutOfRangeException>(() => _session.ConfigureLastWinPairs((keyA, keyB)));
+		Assert.That(_fake.SentPackets, Is.Empty);
+	}
 }

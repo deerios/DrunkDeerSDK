@@ -1603,6 +1603,16 @@ public class KeyboardSession : IDisposable
 			throw new ArgumentException(
 				$"Cannot configure {pairs.Length} last win pairs. The maximum allowed is 14.", nameof(pairs));
 
+		foreach (var (keyA, keyB) in pairs)
+		{
+			if ((uint)keyA >= KeyMapKeyCount)
+				throw new ArgumentOutOfRangeException(nameof(pairs),
+					$"Layout index {keyA} must be in [0, {KeyMapKeyCount - 1}].");
+			if ((uint)keyB >= KeyMapKeyCount)
+				throw new ArgumentOutOfRangeException(nameof(pairs),
+					$"Layout index {keyB} must be in [0, {KeyMapKeyCount - 1}].");
+		}
+
 		var buf = CreateLwPairs.Build((byte)pairs.Length);
 		int offset = 4;
 		foreach (var (keyA, keyB) in pairs)
