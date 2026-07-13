@@ -130,4 +130,13 @@ public class LightingTests
 		}
 		Assert.That(found, Is.True, "Key A not found in any RGB packet");
 	}
+
+	// LOW-8: SetKeyColor used to validate against _rgbProfile's fixed 128-slot backing array
+	// instead of the connected model's actual key count (127 for the default A75 fake).
+	[Test]
+	public void SetKeyColor_IndexBeyondModelKeyCount_Throws()
+	{
+		Assert.Throws<ArgumentOutOfRangeException>(
+			() => _session.SetKeyColor(_session.TotalKeyCount, 0xFF, 0x00, 0x00));
+	}
 }

@@ -1334,9 +1334,12 @@ public class KeyboardSession : IDisposable
 	public void SetKeyColor(int keyIndex, byte r, byte g, byte b, [Range(0, 9)] byte brightness = 9)
 	{
 		EnsureNotPolling();
-		if ((uint)keyIndex >= (uint)_rgbProfile.Length)
+		// Validate against this model's actual key count, not _rgbProfile's fixed 128-slot
+		// backing array size - the latter accepted indices for keys that don't exist on the
+		// connected model.
+		if ((uint)keyIndex >= (uint)TotalKeyCount)
 			throw new ArgumentOutOfRangeException(nameof(keyIndex),
-				$"Key index {keyIndex} is out of range [0, {_rgbProfile.Length - 1}].");
+				$"Key index {keyIndex} is out of range [0, {TotalKeyCount - 1}].");
 		_rgbProfile[keyIndex] = (r, g, b);
 		SendLightingPackets(BuildEntriesFromProfile(), brightness);
 	}
