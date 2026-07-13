@@ -2848,7 +2848,13 @@ public class KeyboardSession : IDisposable
 	/// This operation is irreversible - all profiles, key maps, and lighting
 	/// configurations stored on the keyboard are erased.
 	/// </summary>
-	public void RestoreFactorySettings()
+	/// <remarks>
+	/// PROTO-4: the opcode <c>[0x06, 0x0F, 0xFF]</c> is unverified against a capture of the
+	/// official app - no other message in this protocol starts with <c>0x06</c>. No response is
+	/// checked either, so a failed or rejected request looks identical to success. Internal
+	/// (not exposed publicly) until both are confirmed on real hardware.
+	/// </remarks>
+	internal void RestoreFactorySettings()
 	{
 		EnsureNotPolling();
 		_connection.Send([0x06, 0x0F, 0xFF]);
