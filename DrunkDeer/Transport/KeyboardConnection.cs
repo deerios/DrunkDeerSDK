@@ -67,29 +67,45 @@ public sealed class KeyboardConnection : IKeyboardConnection
 		log.LogDebug("Command interface opened (MaxOut={Out} MaxIn={In})",
 			commandDevice.GetMaxOutputReportLength(), commandDevice.GetMaxInputReportLength());
 
-		// Try to open the read-only data stream (Out=0, In>=64) on the same VID/PID.
-		// The keyboard streams unsolicited 0xB7 key-travel packets on this interface.
+		// Try to open the read-only data stream (Out=0, In>=64) on the same physical device as
+		// commandDevice. The keyboard streams unsolicited 0xB7 key-travel packets on this
+		// interface. A same-VID/PID match alone isn't enough to identify "same physical device" -
+		// with two identical keyboards attached, that would risk opening the *other* unit's data
+		// interface and interleaving its packets into this session. Constrain to devices that
+		// also share a serial number; if the serial number isn't available (not all platforms/
+		// devices expose one), don't guess - fall back to command-stream-only polling instead of
+		// risking a cross-device bind.
 		HidStream? dataStream = null;
-		foreach (var device in DeviceList.Local.GetHidDevices())
+		string? commandSerial = TryGetSerialNumber(commandDevice);
+		if (commandSerial is null)
 		{
-			if (device.VendorID != commandDevice.VendorID || device.ProductID != commandDevice.ProductID) continue;
-			if (device.DevicePath == commandDevice.DevicePath) continue;
-			int outLen, inLen;
-			try
+			log.LogDebug("Command device has no serial number; skipping data-stream search to avoid binding another physical device's interface.");
+		}
+		else
+		{
+			foreach (var device in DeviceList.Local.GetHidDevices())
 			{
-				outLen = device.GetMaxOutputReportLength();
-				inLen  = device.GetMaxInputReportLength();
-			}
-			catch { continue; }
+				if (device.VendorID != commandDevice.VendorID || device.ProductID != commandDevice.ProductID) continue;
+				if (device.DevicePath == commandDevice.DevicePath) continue;
+				if (TryGetSerialNumber(device) != commandSerial) continue;
 
-			log.LogDebug("Data-stream candidate: {Path}  Out={Out} In={In}", device.DevicePath, outLen, inLen);
-			if (outLen != 0 || inLen < 64) continue;
+				int outLen, inLen;
+				try
+				{
+					outLen = device.GetMaxOutputReportLength();
+					inLen  = device.GetMaxInputReportLength();
+				}
+				catch { continue; }
 
-			if (device.TryOpen(options, out dataStream))
-			{
-				dataStream.ReadTimeout = 200;
-				log.LogDebug("Data stream opened: {Path}", device.DevicePath);
-				break;
+				log.LogDebug("Data-stream candidate: {Path}  Out={Out} In={In}", device.DevicePath, outLen, inLen);
+				if (outLen != 0 || inLen < 64) continue;
+
+				if (device.TryOpen(options, out dataStream))
+				{
+					dataStream.ReadTimeout = 200;
+					log.LogDebug("Data stream opened: {Path}", device.DevicePath);
+					break;
+				}
 			}
 		}
 
@@ -163,6 +179,20 @@ public sealed class KeyboardConnection : IKeyboardConnection
 		{
 			transport.Dispose();
 			throw;
+		}
+	}
+
+	/// <summary>Returns the device's serial number, or <see langword="null"/> if unavailable.</summary>
+	private static string? TryGetSerialNumber(HidDevice device)
+	{
+		try
+		{
+			var serial = device.GetSerialNumber();
+			return string.IsNullOrEmpty(serial) ? null : serial;
+		}
+		catch
+		{
+			return null;
 		}
 	}
 
