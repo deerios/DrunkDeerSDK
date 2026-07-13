@@ -1470,11 +1470,7 @@ public class KeyboardSession : IDisposable
 	public void SetCommonConfig(bool turboMode, bool rapidTriggerMode, LastWinRapidTriggerMode lastWinRapidTriggerMode, bool rapidTriggerAutoMatch)
 	{
 		EnsureNotPolling();
-		_turboEnabled          = turboMode;
-		_rapidTriggerEnabled   = rapidTriggerMode;
-		_lastWinRtMode         = lastWinRapidTriggerMode;
-		_rapidTriggerAutoMatch = rapidTriggerAutoMatch;
-		SendCommonConfig();
+		SendCommonConfig(turboMode, rapidTriggerMode, lastWinRapidTriggerMode, rapidTriggerAutoMatch);
 	}
 
 	/// <summary>
@@ -1593,25 +1589,21 @@ public class KeyboardSession : IDisposable
 	public void EnableRapidTrigger(bool autoMatch = false)
 	{
 		EnsureNotPolling();
-		_rapidTriggerEnabled   = true;
-		_rapidTriggerAutoMatch = autoMatch;
-		SendCommonConfig();
+		SendCommonConfig(_turboEnabled, true, _lastWinRtMode, autoMatch);
 	}
 
 	/// <summary>Disables Rapid Trigger globally.</summary>
 	public void DisableRapidTrigger()
 	{
 		EnsureNotPolling();
-		_rapidTriggerEnabled = false;
-		SendCommonConfig();
+		SendCommonConfig(_turboEnabled, false, _lastWinRtMode, _rapidTriggerAutoMatch);
 	}
 
 	/// <summary>Enables Turbo mode globally.</summary>
 	public void EnableTurboMode()
 	{
 		EnsureNotPolling();
-		_turboEnabled = true;
-		SendCommonConfig();
+		SendCommonConfig(true, _rapidTriggerEnabled, _lastWinRtMode, _rapidTriggerAutoMatch);
 		if (HasTurboMode) { var b = FetchFuncBlock(); b.TurboMode = true;  PushFuncBlock(b); }
 	}
 
@@ -1619,8 +1611,7 @@ public class KeyboardSession : IDisposable
 	public void DisableTurboMode()
 	{
 		EnsureNotPolling();
-		_turboEnabled = false;
-		SendCommonConfig();
+		SendCommonConfig(false, _rapidTriggerEnabled, _lastWinRtMode, _rapidTriggerAutoMatch);
 		if (HasTurboMode) { var b = FetchFuncBlock(); b.TurboMode = false; PushFuncBlock(b); }
 	}
 
@@ -1646,20 +1637,19 @@ public class KeyboardSession : IDisposable
 
 			if (profile.RapidTrigger.HasValue)
 			{
-				_rapidTriggerEnabled   = profile.RapidTrigger.Value;
-				_rapidTriggerAutoMatch = profile.RapidTriggerAutoMatch ?? _rapidTriggerAutoMatch;
-				SendCommonConfig();
+				SendCommonConfig(_turboEnabled, profile.RapidTrigger.Value, _lastWinRtMode,
+					profile.RapidTriggerAutoMatch ?? _rapidTriggerAutoMatch);
 			}
 			else if (profile.RapidTriggerAutoMatch.HasValue)
 			{
-				_rapidTriggerAutoMatch = profile.RapidTriggerAutoMatch.Value;
-				SendCommonConfig();
+				SendCommonConfig(_turboEnabled, _rapidTriggerEnabled, _lastWinRtMode,
+					profile.RapidTriggerAutoMatch.Value);
 			}
 
 			if (profile.TurboMode.HasValue)
 			{
-				_turboEnabled = profile.TurboMode.Value;
-				SendCommonConfig();
+				SendCommonConfig(profile.TurboMode.Value, _rapidTriggerEnabled, _lastWinRtMode,
+					_rapidTriggerAutoMatch);
 			}
 		}
 
@@ -1702,15 +1692,27 @@ public class KeyboardSession : IDisposable
 		SendLightingPackets(BuildEntriesFromProfile(), theme.Brightness);
 	}
 
-	private void SendCommonConfig()
+	/// <summary>
+	/// Sends a CommonConfig (0xB5) packet built from the given values and, only once the
+	/// keyboard ACKs it, commits those values to the session's mirrors. Building the packet from
+	/// parameters (not the mirror fields directly) means a failed/timed-out send leaves the
+	/// mirrors matching what the keyboard actually has.
+	/// </summary>
+	private void SendCommonConfig(bool turboMode, bool rapidTriggerMode,
+		LastWinRapidTriggerMode lastWinRapidTriggerMode, bool rapidTriggerAutoMatch)
 	{
 		var resp = _connection.SendAndReceive(CommonConfig.Build(
-			turboMode: _turboEnabled ? (byte)1 : (byte)0,
-			rapidTriggerMode: _rapidTriggerEnabled ? (byte)1 : (byte)0,
-			lastWinRapidTriggerMode: (byte)_lastWinRtMode,
-			rapidTriggerAutoMatch: _rapidTriggerAutoMatch ? (byte)1 : (byte)0));
+			turboMode: turboMode ? (byte)1 : (byte)0,
+			rapidTriggerMode: rapidTriggerMode ? (byte)1 : (byte)0,
+			lastWinRapidTriggerMode: (byte)lastWinRapidTriggerMode,
+			rapidTriggerAutoMatch: rapidTriggerAutoMatch ? (byte)1 : (byte)0));
 		if (resp is null || !CommonConfigAcknowledge.Matches(resp))
 			throw new InvalidOperationException("No ACK for CommonConfig.");
+
+		_turboEnabled          = turboMode;
+		_rapidTriggerEnabled   = rapidTriggerMode;
+		_lastWinRtMode         = lastWinRapidTriggerMode;
+		_rapidTriggerAutoMatch = rapidTriggerAutoMatch;
 	}
 
 	/// <summary>Switches the keyboard between Windows and Mac compatibility modes.</summary>

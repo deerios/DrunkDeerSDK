@@ -93,6 +93,23 @@ public class CommonConfigTests
 		Assert.That(_fake.SentPackets[0][8], Is.EqualTo(0));
 	}
 
+	// ── API-8: mirrors must not update on a failed/un-ACKed send ──────────────
+
+	[Test]
+	public void EnableRapidTrigger_NoAck_DoesNotUpdateMirror()
+	{
+		// No ACK enqueued: EnableRapidTrigger's SendAndReceive returns null, so the call throws.
+		Assert.Throws<InvalidOperationException>(() => _session.EnableRapidTrigger());
+		_fake.SentPackets.Clear();
+
+		// A later, successful call rebuilds the B5 packet from the mirrors. If the failed call
+		// above had already set _rapidTriggerEnabled = true, this packet would carry that stale
+		// "true" even though the keyboard never actually acknowledged it.
+		_fake.EnqueueAck(0xB5);
+		_session.EnableTurboMode();
+		Assert.That(_fake.SentPackets[0][8], Is.EqualTo(0));
+	}
+
 	// ── EnableAutoMatch / DisableAutoMatch ────────────────────────────────────
 	// API-7: these send 0xFD 0x0C directly and must also update the _rapidTriggerAutoMatch
 	// mirror, or the next SendCommonConfig() call (from any Enable/Disable RT/Turbo call)
