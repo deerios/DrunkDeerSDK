@@ -35,9 +35,15 @@ internal sealed class HidTransport : IDisposable
 	public void Send(byte[] packet)
 	{
 		int reportLen = _device.GetMaxOutputReportLength(); // includes the report-ID byte
+		if (packet.Length > reportLen - 1)
+			throw new ArgumentException(
+				$"Packet is {packet.Length} bytes, but this device's max output report only " +
+				$"has room for {reportLen - 1} bytes (plus the report-ID byte). All current " +
+				"protocol packets fit in 64 bytes; a longer packet here would otherwise be " +
+				"silently truncated.", nameof(packet));
 		var buf = new byte[reportLen];
 		buf[0] = 0x04; // HID output report ID
-		Array.Copy(packet, 0, buf, 1, Math.Min(packet.Length, reportLen - 1));
+		Array.Copy(packet, 0, buf, 1, packet.Length);
 		_log.LogTrace("TX  [{Hex}]", Hex(buf));
 		_command.Write(buf);
 	}
