@@ -24,7 +24,6 @@ namespace DrunkDeer.Protocol;
 /// // Build a profile programmatically and apply it
 /// var profile = new KeyboardProfile
 /// {
-///     ActuationMm  = 2.0f,
 ///     RapidTrigger = true,
 ///     Actuation    = new KeyDepthProfileBuilder().Default(2.0f).Build(),
 ///     Theme        = new KeyboardThemeBuilder().Base(0, 80, 255).Brightness(7).Build()
