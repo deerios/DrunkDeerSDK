@@ -153,6 +153,19 @@ public readonly record struct MacroAction
 			throw new ArgumentException(
 				$"Expected {SlotCount} macro slots, got {slots.Length}.", nameof(slots));
 
+		// Pre-compute total size so an overflow is a clear, up-front ArgumentException instead of
+		// an ArgumentOutOfRangeException thrown mid-encode from a span slice, after the header
+		// (and any earlier slots' data) has already been written into `block`.
+		int totalBytes = HeaderSize + 4;
+		foreach (var actions in slots)
+			if (actions is { Length: > 0 })
+				totalBytes += actions.Length * 4;
+		if (totalBytes > BlockSize)
+			throw new ArgumentException(
+				$"Macro slots require {totalBytes} bytes, but the wire block only holds " +
+				$"{BlockSize} bytes ({(BlockSize - HeaderSize - 4) / 4} total actions across all " +
+				"slots). Reduce the number of actions.", nameof(slots));
+
 		var block = new byte[BlockSize];
 		// dataOffset starts at 4 so the first non-empty slot's ptr = HeaderSize + 4 = 68,
 		// ensuring it never collides with the empty sentinel 0x0040 (= HeaderSize = 64).
