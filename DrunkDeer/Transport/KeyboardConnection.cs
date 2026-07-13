@@ -10,6 +10,10 @@ namespace DrunkDeer.Protocol;
 /// </summary>
 public sealed class KeyboardConnection : IKeyboardConnection
 {
+	// Highest byte offset IdentityResponse's accessors read (GetLastWinReplace(buf) => buf[32])
+	// plus one. IdentityResponse.Matches itself only requires the 3-byte header.
+	private const int IdentityResponseMinLength = 33;
+
 	private readonly ILogger _log;
 
 	private readonly HidTransport _transport;
@@ -138,7 +142,13 @@ public sealed class KeyboardConnection : IKeyboardConnection
 					log.LogDebug("Handshake attempt {N}: received {Len} bytes, matches={M}",
 						attempt, resp.Length, IdentityResponse.Matches(resp));
 					lastReceived = resp;
-					if (IdentityResponse.Matches(resp))
+					// IdentityResponse.Matches only requires 3 bytes (the header), but the
+					// GetModel/GetFirmwareVersion/Get*Value accessors below read up to byte 32.
+					// A header-matching but truncated report (e.g. read from a report queue with
+					// a shorter max length than expected) would otherwise throw
+					// IndexOutOfRangeException out of Open instead of retrying like any other
+					// malformed response.
+					if (IdentityResponse.Matches(resp) && resp.Length >= IdentityResponseMinLength)
 						break;
 				}
 				else
