@@ -1287,7 +1287,8 @@ public class KeyboardSession : IDisposable
 	internal (byte R, byte G, byte B)[] ReadStoredColors(int profileIndex = 0)
 	{
 		EnsureNotPolling();
-		var raw = ReadExtendedGateway(0x0A, (ushort)(StoredColorStride * profileIndex), StoredColorByteCount);
+		ValidateProfileIndex(profileIndex);
+		var raw = ReadExtendedGateway(0x0A, StoredColorStride * profileIndex, StoredColorByteCount);
 		var result = new (byte, byte, byte)[StoredColorKeyCount];
 		for (int i = 0; i < StoredColorKeyCount; i++)
 			result[i] = (raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2]);
@@ -1304,6 +1305,7 @@ public class KeyboardSession : IDisposable
 	internal void WriteStoredColors((byte R, byte G, byte B)[] colors, int profileIndex = 0)
 	{
 		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
 		if (colors.Length != StoredColorKeyCount)
 			throw new ArgumentException(
 				$"Expected {StoredColorKeyCount} color entries, got {colors.Length}.", nameof(colors));
@@ -1314,7 +1316,7 @@ public class KeyboardSession : IDisposable
 			raw[i * 3 + 1] = colors[i].G;
 			raw[i * 3 + 2] = colors[i].B;
 		}
-		WriteExtendedGateway(0x0B, (ushort)(StoredColorStride * profileIndex), raw);
+		WriteExtendedGateway(0x0B, StoredColorStride * profileIndex, raw);
 	}
 
 	/// <summary>
@@ -1328,6 +1330,7 @@ public class KeyboardSession : IDisposable
 	internal void SaveLightingToProfile(int profileIndex = 0)
 	{
 		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
 		var raw = new byte[StoredColorByteCount];
 		for (int i = 0; i < StoredColorKeyCount; i++)
 		{
@@ -1336,7 +1339,7 @@ public class KeyboardSession : IDisposable
 			raw[i * 3 + 1] = g;
 			raw[i * 3 + 2] = b;
 		}
-		WriteExtendedGateway(0x0B, (ushort)(StoredColorStride * profileIndex), raw);
+		WriteExtendedGateway(0x0B, StoredColorStride * profileIndex, raw);
 	}
 
 	/// <summary>
@@ -1348,7 +1351,8 @@ public class KeyboardSession : IDisposable
 	internal void LoadLightingFromProfile(int profileIndex = 0, [Range(0, 9)] byte brightness = 9)
 	{
 		EnsureNotPolling();
-		var raw = ReadExtendedGateway(0x0A, (ushort)(StoredColorStride * profileIndex), StoredColorByteCount);
+		ValidateProfileIndex(profileIndex);
+		var raw = ReadExtendedGateway(0x0A, StoredColorStride * profileIndex, StoredColorByteCount);
 		for (int i = 0; i < StoredColorKeyCount; i++)
 			_rgbProfile[i] = (raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2]);
 		SendLightingPackets(BuildEntriesFromProfile(), brightness);
@@ -1918,7 +1922,7 @@ public class KeyboardSession : IDisposable
 	//   Read  checksum = (addr_lo + addr_hi + len)                   & 0xFF
 	//   Write checksum = (len + addr_lo + addr_hi + is_last + Σdata) & 0xFF
 
-	private byte[] ReadExtendedGateway(byte subCmd, ushort baseAddr, int totalBytes)
+	private byte[] ReadExtendedGateway(byte subCmd, int baseAddr, int totalBytes)
 	{
 		EnsureHasFuncBlock();
 
@@ -1927,7 +1931,7 @@ public class KeyboardSession : IDisposable
 		while (offset < totalBytes)
 		{
 			int len = Math.Min(56, totalBytes - offset);
-			ushort addr = (ushort)(baseAddr + offset);
+			ushort addr = checked((ushort)(baseAddr + offset));
 			byte cs = (byte)((addr & 0xFF) + (addr >> 8) + len);
 			var req = new byte[64];
 			req[0] = 0x55; req[1] = subCmd; req[2] = 0x00;
@@ -1944,7 +1948,7 @@ public class KeyboardSession : IDisposable
 		return result;
 	}
 
-	private void WriteExtendedGateway(byte subCmd, ushort baseAddr, ReadOnlySpan<byte> data)
+	private void WriteExtendedGateway(byte subCmd, int baseAddr, ReadOnlySpan<byte> data)
 	{
 		EnsureHasFuncBlock();
 
@@ -1952,7 +1956,7 @@ public class KeyboardSession : IDisposable
 		while (offset < data.Length)
 		{
 			int len = Math.Min(56, data.Length - offset);
-			ushort addr = (ushort)(baseAddr + offset);
+			ushort addr = checked((ushort)(baseAddr + offset));
 			byte isLast = (offset + len >= data.Length) ? (byte)1 : (byte)0;
 			var slice = data.Slice(offset, len);
 			byte cs = (byte)(len + (addr & 0xFF) + (addr >> 8) + isLast + SumBytes(slice));
@@ -1995,26 +1999,34 @@ public class KeyboardSession : IDisposable
 
 	private KeyboardFuncBlock FetchFuncBlock(int profileIndex = 0)
 	{
+		ValidateProfileIndex(profileIndex);
 		EnsureHasFuncBlock();
 		var block = new KeyboardFuncBlock();
-		ReadExtendedGateway(0x05, (ushort)(64 * profileIndex), 64).CopyTo(block.RawBytes, 0);
+		ReadExtendedGateway(0x05, 64 * profileIndex, 64).CopyTo(block.RawBytes, 0);
 		return block;
 	}
 
 	private void PushFuncBlock(KeyboardFuncBlock block, int profileIndex = 0)
 	{
+		ValidateProfileIndex(profileIndex);
 		EnsureHasFuncBlock();
-		WriteExtendedGateway(0x06, (ushort)(64 * profileIndex), block.RawBytes);
+		WriteExtendedGateway(0x06, 64 * profileIndex, block.RawBytes);
 	}
 
 
 	private const int KeyTriggerStride = 1024; // 128 keys × 8 bytes per profile
 
-	private byte[] FetchKeyTriggers(int profileIndex = 0) =>
-		ReadExtendedGateway(0xA0, (ushort)(KeyTriggerStride * profileIndex), KeyTriggerStride);
+	private byte[] FetchKeyTriggers(int profileIndex = 0)
+	{
+		ValidateProfileIndex(profileIndex);
+		return ReadExtendedGateway(0xA0, KeyTriggerStride * profileIndex, KeyTriggerStride);
+	}
 
-	private void PushKeyTriggers(ReadOnlySpan<byte> data, int profileIndex = 0) =>
-		WriteExtendedGateway(0xA1, (ushort)(KeyTriggerStride * profileIndex), data);
+	private void PushKeyTriggers(ReadOnlySpan<byte> data, int profileIndex = 0)
+	{
+		ValidateProfileIndex(profileIndex);
+		WriteExtendedGateway(0xA1, KeyTriggerStride * profileIndex, data);
+	}
 
 	/// <summary>
 	/// Reads all 128 per-key trigger configurations for the specified profile.
@@ -2058,13 +2070,14 @@ public class KeyboardSession : IDisposable
 	internal void SetKeyTrigger(int keyIndex, KeyTriggerConfig config, int profileIndex = 0)
 	{
 		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
 		if ((uint)keyIndex >= 128)
 			throw new ArgumentOutOfRangeException(nameof(keyIndex),
 				$"Key trigger index {keyIndex} must be in [0, 127].");
 		var entry = new byte[8];
 		KeyTriggerConfig.Encode(config, entry);
 		WriteExtendedGateway(0xA1,
-			(ushort)(KeyTriggerStride * profileIndex + 8 * keyIndex), entry);
+			KeyTriggerStride * profileIndex + 8 * keyIndex, entry);
 	}
 
 	/// <summary>
@@ -2089,8 +2102,11 @@ public class KeyboardSession : IDisposable
 	private const int KeyMapLayerStride = 512;
 	private const int KeyMapProfileStride = KeyMapLayerStride * KeyMapLayerCount; // 2048
 
-	private static ushort KeyMapAddr(int profileIndex, int layerIndex, int keyIndex = 0) =>
-		(ushort)(KeyMapProfileStride * profileIndex + KeyMapLayerStride * layerIndex + 3 * keyIndex);
+	private static int KeyMapAddr(int profileIndex, int layerIndex, int keyIndex = 0)
+	{
+		ValidateProfileIndex(profileIndex);
+		return KeyMapProfileStride * profileIndex + KeyMapLayerStride * layerIndex + 3 * keyIndex;
+	}
 
 	private static UserKey[] DecodeUserKeyArray(byte[] raw, int count)
 	{
@@ -2204,7 +2220,8 @@ public class KeyboardSession : IDisposable
 	internal DynamicKeystrokeEntry[] ReadDynamicKeystrokeEntries(int profileIndex = 0)
 	{
 		EnsureNotPolling();
-		var raw = ReadExtendedGateway(0xA2, (ushort)(DksStride * profileIndex), DksStride);
+		ValidateProfileIndex(profileIndex);
+		var raw = ReadExtendedGateway(0xA2, DksStride * profileIndex, DksStride);
 		var result = new DynamicKeystrokeEntry[DynamicKeystrokeEntry.SlotCount];
 		for (int i = 0; i < DynamicKeystrokeEntry.SlotCount; i++)
 			result[i] = DynamicKeystrokeEntry.Decode(raw.AsSpan(i * DynamicKeystrokeEntry.ByteSize));
@@ -2217,13 +2234,14 @@ public class KeyboardSession : IDisposable
 	internal void WriteDynamicKeystrokeEntries(DynamicKeystrokeEntry[] entries, int profileIndex = 0)
 	{
 		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
 		if (entries.Length != DynamicKeystrokeEntry.SlotCount)
 			throw new ArgumentException(
 				$"Expected {DynamicKeystrokeEntry.SlotCount} DKS entries, got {entries.Length}.", nameof(entries));
 		var raw = new byte[DksStride];
 		for (int i = 0; i < DynamicKeystrokeEntry.SlotCount; i++)
 			DynamicKeystrokeEntry.Encode(entries[i], raw.AsSpan(i * DynamicKeystrokeEntry.ByteSize));
-		WriteExtendedGateway(0xA3, (ushort)(DksStride * profileIndex), raw);
+		WriteExtendedGateway(0xA3, DksStride * profileIndex, raw);
 	}
 
 	/// <summary>
@@ -2236,13 +2254,14 @@ public class KeyboardSession : IDisposable
 	internal void SetDynamicKeystrokeEntry(int slotIndex, DynamicKeystrokeEntry entry, int profileIndex = 0)
 	{
 		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
 		if ((uint)slotIndex >= DynamicKeystrokeEntry.SlotCount)
 			throw new ArgumentOutOfRangeException(nameof(slotIndex),
 				$"DKS slot index {slotIndex} must be in [0, {DynamicKeystrokeEntry.SlotCount - 1}].");
 		var raw = new byte[DynamicKeystrokeEntry.ByteSize];
 		DynamicKeystrokeEntry.Encode(entry, raw);
 		WriteExtendedGateway(0xA3,
-			(ushort)(DksStride * profileIndex + DynamicKeystrokeEntry.ByteSize * slotIndex), raw);
+			DksStride * profileIndex + DynamicKeystrokeEntry.ByteSize * slotIndex, raw);
 	}
 
 	private const int MtStride = 256;
@@ -2252,7 +2271,8 @@ public class KeyboardSession : IDisposable
 	internal MultiTapEntry[] ReadMultiTapEntries(int profileIndex = 0)
 	{
 		EnsureNotPolling();
-		var raw = ReadExtendedGateway(0xA4, (ushort)(MtStride * profileIndex),
+		ValidateProfileIndex(profileIndex);
+		var raw = ReadExtendedGateway(0xA4, MtStride * profileIndex,
 			MultiTapEntry.SlotCount * MultiTapEntry.ByteSize);
 		var result = new MultiTapEntry[MultiTapEntry.SlotCount];
 		for (int i = 0; i < MultiTapEntry.SlotCount; i++)
@@ -2266,13 +2286,14 @@ public class KeyboardSession : IDisposable
 	internal void WriteMultiTapEntries(MultiTapEntry[] entries, int profileIndex = 0)
 	{
 		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
 		if (entries.Length != MultiTapEntry.SlotCount)
 			throw new ArgumentException(
 				$"Expected {MultiTapEntry.SlotCount} MT entries, got {entries.Length}.", nameof(entries));
 		var raw = new byte[MultiTapEntry.SlotCount * MultiTapEntry.ByteSize];
 		for (int i = 0; i < MultiTapEntry.SlotCount; i++)
 			MultiTapEntry.Encode(entries[i], raw.AsSpan(i * MultiTapEntry.ByteSize));
-		WriteExtendedGateway(0xA5, (ushort)(MtStride * profileIndex), raw);
+		WriteExtendedGateway(0xA5, MtStride * profileIndex, raw);
 	}
 
 	/// <summary>
@@ -2285,13 +2306,14 @@ public class KeyboardSession : IDisposable
 	internal void SetMultiTapEntry(int slotIndex, MultiTapEntry entry, int profileIndex = 0)
 	{
 		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
 		if ((uint)slotIndex >= MultiTapEntry.SlotCount)
 			throw new ArgumentOutOfRangeException(nameof(slotIndex),
 				$"MT slot index {slotIndex} must be in [0, {MultiTapEntry.SlotCount - 1}].");
 		Span<byte> raw = stackalloc byte[MultiTapEntry.ByteSize];
 		MultiTapEntry.Encode(entry, raw);
 		WriteExtendedGateway(0xA5,
-			(ushort)(MtStride * profileIndex + MultiTapEntry.ByteSize * slotIndex), raw);
+			MtStride * profileIndex + MultiTapEntry.ByteSize * slotIndex, raw);
 	}
 
 	private const int TglStride = 128;
@@ -2306,7 +2328,8 @@ public class KeyboardSession : IDisposable
 	internal UserKey[] ReadToggleKeyEntries(int profileIndex = 0)
 	{
 		EnsureNotPolling();
-		var raw = ReadExtendedGateway(0xA6, (ushort)(TglStride * profileIndex),
+		ValidateProfileIndex(profileIndex);
+		var raw = ReadExtendedGateway(0xA6, TglStride * profileIndex,
 			TglSlotCount * TglSlotSize);
 		return DecodeUserKeyArray(raw, TglSlotCount);
 	}
@@ -2317,12 +2340,13 @@ public class KeyboardSession : IDisposable
 	internal void WriteToggleKeyEntries(UserKey[] entries, int profileIndex = 0)
 	{
 		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
 		if (entries.Length != TglSlotCount)
 			throw new ArgumentException(
 				$"Expected {TglSlotCount} Toggle entries, got {entries.Length}.", nameof(entries));
 		var raw = new byte[TglSlotCount * TglSlotSize];
 		EncodeUserKeyArray(entries, raw, TglSlotCount);
-		WriteExtendedGateway(0xA7, (ushort)(TglStride * profileIndex), raw);
+		WriteExtendedGateway(0xA7, TglStride * profileIndex, raw);
 	}
 
 	/// <summary>
@@ -2335,11 +2359,12 @@ public class KeyboardSession : IDisposable
 	internal void SetToggleKeyEntry(int slotIndex, UserKey entry, int profileIndex = 0)
 	{
 		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
 		if ((uint)slotIndex >= TglSlotCount)
 			throw new ArgumentOutOfRangeException(nameof(slotIndex),
 				$"Toggle slot index {slotIndex} must be in [0, {TglSlotCount - 1}].");
 		WriteExtendedGateway(0xA7,
-			(ushort)(TglStride * profileIndex + TglSlotSize * slotIndex),
+			TglStride * profileIndex + TglSlotSize * slotIndex,
 			[entry.Type, entry.Param1, entry.Param2]);
 	}
 
@@ -2354,7 +2379,8 @@ public class KeyboardSession : IDisposable
 	internal MacroAction[][] ReadMacroSlots(int profileIndex = 0)
 	{
 		EnsureNotPolling();
-		var raw = ReadExtendedGateway(0x0C, (ushort)(MacroStride * profileIndex), MacroStride);
+		ValidateProfileIndex(profileIndex);
+		var raw = ReadExtendedGateway(0x0C, MacroStride * profileIndex, MacroStride);
 		return MacroAction.DecodeBlock(raw);
 	}
 
@@ -2368,11 +2394,12 @@ public class KeyboardSession : IDisposable
 	internal void WriteMacroSlots(MacroAction[]?[] slots, int profileIndex = 0)
 	{
 		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
 		if (slots.Length != MacroAction.SlotCount)
 			throw new ArgumentException(
 				$"Expected {MacroAction.SlotCount} macro slots, got {slots.Length}.", nameof(slots));
 		var raw = MacroAction.EncodeBlock(slots);
-		WriteExtendedGateway(0x0D, (ushort)(MacroStride * profileIndex), raw);
+		WriteExtendedGateway(0x0D, MacroStride * profileIndex, raw);
 	}
 
 	/// <summary>
@@ -2439,9 +2466,10 @@ public class KeyboardSession : IDisposable
 	internal FullProfileData PullFullProfile(int profileIndex = 0)
 	{
 		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
 		EnsureHasFuncBlock();
 
-		var funcRaw = ReadExtendedGateway(0x05, (ushort)(64 * profileIndex), 64);
+		var funcRaw = ReadExtendedGateway(0x05, 64 * profileIndex, 64);
 		var funcBlock = new KeyboardFuncBlock();
 		funcRaw.CopyTo(funcBlock.RawBytes, 0);
 
@@ -2477,6 +2505,7 @@ public class KeyboardSession : IDisposable
 	internal void PushFullProfile(FullProfileData data, int profileIndex = 0)
 	{
 		EnsureNotPolling();
+		ValidateProfileIndex(profileIndex);
 
 		if (data.FuncBlock != null)
 			PushFuncBlock(data.FuncBlock, profileIndex);
