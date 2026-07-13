@@ -49,6 +49,7 @@ public enum DDKey
 	Space,
 	RightAlt, Fn1, Fn2,
 	Menu,
+	RightCtrl,
 
 	Insert, Delete, Home, End, PageUp, PageDown,
 
@@ -148,6 +149,7 @@ internal static class KeyLayoutNames
 			[DDKey.Fn1]           = "FN1",
 			[DDKey.Fn2]           = "FN2",
 			[DDKey.Menu]          = "APP",
+			[DDKey.RightCtrl]     = "CTRL_R",
 
 			[DDKey.Insert]        = "INSERT",
 			[DDKey.Delete]        = "DELETE",
