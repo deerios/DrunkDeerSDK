@@ -457,8 +457,14 @@ public class KeyboardSession : IDisposable
 		int profileSize = TotalKeyCount;
 		_actuationProfile = new float[profileSize];
 		Array.Fill(_actuationProfile, 2.0f);
+		// Firmware default RtPress/RtRelease is 25 raw units (0.01 mm/unit) = 0.25 mm
+		// (KeyTriggerConfig.Default). Seeding with 0 would make the first per-key
+		// downstroke/upstroke call fail ValidateDepthMm for every other key still at its
+		// unset default, since MinDepthMm is 0.2 mm.
 		_downstrokeProfile = new float[profileSize];
+		Array.Fill(_downstrokeProfile, 0.25f);
 		_upstrokeProfile   = new float[profileSize];
+		Array.Fill(_upstrokeProfile, 0.25f);
 
 		_turboEnabled          = connection.InitialTurboValue != 0;
 		_rapidTriggerEnabled   = connection.InitialRapidTriggerEnabled != 0;
@@ -879,20 +885,31 @@ public class KeyboardSession : IDisposable
 
 	/// <summary>Sets per-key actuation depths from a <see cref="KeyDepthProfile"/>.</summary>
 	public void SetActuationPoints(KeyDepthProfile profile) =>
-		SetActuationPoint(BuildDepthArray(profile));
+		SetActuationPoint(BuildDepthArray(profile, _actuationProfile));
 
 	/// <summary>Sets per-key downstroke depths from a <see cref="KeyDepthProfile"/>.</summary>
 	public void SetDownstrokePoints(KeyDepthProfile profile) =>
-		SetDownstrokePoint(BuildDepthArray(profile));
+		SetDownstrokePoint(BuildDepthArray(profile, _downstrokeProfile));
 
 	/// <summary>Sets per-key upstroke depths from a <see cref="KeyDepthProfile"/>.</summary>
 	public void SetUpstrokePoints(KeyDepthProfile profile) =>
-		SetUpstrokePoint(BuildDepthArray(profile));
+		SetUpstrokePoint(BuildDepthArray(profile, _upstrokeProfile));
 
-	private float[] BuildDepthArray(KeyDepthProfile profile, [CallerMemberName] string callerName = "")
+	/// <summary>
+	/// Expands a <see cref="KeyDepthProfile"/> into a per-key depth array. A zero/unset
+	/// <see cref="KeyDepthProfile.Default"/> means "leave keys not listed in
+	/// <see cref="KeyDepthProfile.Keys"/> at their current session value" - it does not mean
+	/// "set them to 0", which would be below <see cref="MinDepthMm"/> and fail validation
+	/// (this is what made CaptureProfile -> ApplyProfile round-trips throw for non-uniform
+	/// depths, since CaptureProfile always emits Default: 0 for a non-uniform profile).
+	/// </summary>
+	private float[] BuildDepthArray(KeyDepthProfile profile, float[] currentProfile, [CallerMemberName] string callerName = "")
 	{
 		var depths = new float[TotalKeyCount];
-		Array.Fill(depths, profile.Default);
+		if (profile.Default != 0f)
+			Array.Fill(depths, profile.Default);
+		else
+			currentProfile.CopyTo(depths, 0);
 		if (profile.Keys != null)
 		{
 			foreach (var (name, depthMm) in profile.Keys)
@@ -1614,13 +1631,13 @@ public class KeyboardSession : IDisposable
 		if (!profile.IsThemeOnly)
 		{
 			if (profile.Actuation != null)
-				SetActuationPoint(BuildDepthArray(profile.Actuation));
+				SetActuationPoint(BuildDepthArray(profile.Actuation, _actuationProfile));
 
 			if (profile.Downstroke != null)
-				SetDownstrokePoint(BuildDepthArray(profile.Downstroke));
+				SetDownstrokePoint(BuildDepthArray(profile.Downstroke, _downstrokeProfile));
 
 			if (profile.Upstroke != null)
-				SetUpstrokePoint(BuildDepthArray(profile.Upstroke));
+				SetUpstrokePoint(BuildDepthArray(profile.Upstroke, _upstrokeProfile));
 
 			if (profile.RapidTrigger.HasValue)
 			{
