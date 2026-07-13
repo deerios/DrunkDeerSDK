@@ -187,9 +187,15 @@ internal static class KeyLayout
 		ModelSlugs.G65M1     or
 		ModelSlugs.G65M2     or
 		ModelSlugs.G65M3 => LayoutG65,
+		// TODO: verify via capture. X60 Future is a 60% board; G60's layout is a closer
+		// approximation than the 75% A75's (the previous silent default), but has not been
+		// confirmed against the real firmware slot map. See README verification table.
 		ModelSlugs.G60   or
-		ModelSlugs.G60V600 => LayoutG60,
-		_ => LayoutA75,
+		ModelSlugs.G60V600 or
+		ModelSlugs.X60Future => LayoutG60,
+		_ => throw new NotSupportedException(
+			$"No layout table for model '{modelSlug}'. Add a case to KeyLayout.GetLayout " +
+			"rather than falling back to another model's table."),
 	};
 
 	/// <summary>
@@ -201,6 +207,9 @@ internal static class KeyLayout
 		{
 			(ModelSlugs.A75Master, _) => RgbA75Master,
 			(ModelSlugs.A75, "iso") => RgbA75Iso,
+			(ModelSlugs.A75, _)        or
+			(ModelSlugs.A75Pro, _)     or
+			(ModelSlugs.A75Ultra, _) => RgbA75,
 			(ModelSlugs.G75Jp, _) => RgbG75Jp,
 			(ModelSlugs.G75, _) => RgbG75,
 			(ModelSlugs.G65, _)        or
@@ -208,9 +217,13 @@ internal static class KeyLayout
 			(ModelSlugs.G65M1, _)      or
 			(ModelSlugs.G65M2, _)      or
 			(ModelSlugs.G65M3, _) => RgbG65,
+			// TODO: verify via capture, same caveat as GetLayout above.
 			(ModelSlugs.G60, _)    or
-			(ModelSlugs.G60V600, _) => RgbG60,
-			_ => RgbA75,
+			(ModelSlugs.G60V600, _) or
+			(ModelSlugs.X60Future, _) => RgbG60,
+			_ => throw new NotSupportedException(
+				$"No RGB index table for model '{modelSlug}' variant '{variant}'. Add a case to " +
+				"KeyLayout.GetRgbIndices rather than falling back to another model's table."),
 		};
 
 	/// <summary>
