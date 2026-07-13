@@ -494,13 +494,48 @@ public class KeyboardSession : IDisposable
 		_pollTask = Task.Run(() => PollLoop(_pollCts.Token), _pollCts.Token);
 	}
 
-	/// <summary>Signals the polling loop to stop and waits up to two seconds for it to exit.</summary>
-	public void StopPolling()
+	/// <summary>
+	/// Signals the polling loop to stop and waits up to two seconds for it to exit.
+	/// </summary>
+	/// <returns>
+	/// <see langword="true"/> if the loop stopped within the timeout; <see langword="false"/> if
+	/// it's still running (rare - the inner receive loop can legitimately take up to
+	/// 10 retries x 200 ms plus dispatch time). On <see langword="false"/>, <see cref="IsPolling"/>
+	/// may still report <see langword="true"/> and a caller that immediately invokes a config
+	/// method will still hit <c>EnsureNotPolling</c>'s guard.
+	/// </returns>
+	public bool StopPolling()
 	{
 		_log.LogInformation("Stopping poll loop…");
 		_pollCts?.Cancel();
-		_pollTask?.Wait(TimeSpan.FromSeconds(2));
-		_log.LogInformation("Poll loop stopped.");
+
+		bool completed;
+		try
+		{
+			completed = _pollTask?.Wait(TimeSpan.FromSeconds(2)) ?? true;
+		}
+		catch (AggregateException ex)
+		{
+			// The loop itself now swallows and logs handler exceptions (POLL-2), so a fault here
+			// means something genuinely unexpected happened in PollLoop. The task is done either
+			// way, so treat it as stopped rather than leaving the caller to catch this themselves.
+			_log.LogError(ex.Flatten(), "Poll loop task faulted while stopping.");
+			completed = true;
+		}
+
+		if (completed)
+		{
+			_pollCts?.Dispose();
+			_pollCts  = null;
+			_pollTask = null;
+			_log.LogInformation("Poll loop stopped.");
+		}
+		else
+		{
+			_log.LogWarning("Poll loop did not stop within the 2s timeout; it may still be running.");
+		}
+
+		return completed;
 	}
 
 	private void PollLoop(CancellationToken ct)
@@ -530,7 +565,7 @@ public class KeyboardSession : IDisposable
 			Array.Clear(gotPkt, 0, frameCount);
 			int retries = 0;
 
-			while (!AllReceived(gotPkt) && retries < 10)
+			while (!AllReceived(gotPkt) && retries < 10 && !ct.IsCancellationRequested)
 			{
 				var buf = _connection.ReceiveCommand(200);
 				if (buf is null) { retries++; continue; }
