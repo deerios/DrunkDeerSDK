@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Scriban" Version="7.2.0" />
+    <PackageReference Include="Scriban" Version="7.2.5" />
     <PackageReference Include="YamlDotNet" Version="18.0.0" />
   </ItemGroup>
 
