@@ -178,10 +178,18 @@ internal static class Generator
 			.Select(BuildModelContext)
 			.ToList();
 
+		var discovery = def.Discovery
+			.Select(p => new ScriptObject { ["vid"] = $"0x{p.Vid:X4}", ["pid"] = $"0x{p.Pid:X4}" })
+			.ToList();
+
 		Render(
 			Path.Combine(templatesDir, "Models.sbn"),
 			Path.Combine(outputDir, "ModelRegistry.g.cs"),
-			ctx => ctx["models"] = models);
+			ctx =>
+			{
+				ctx["models"]    = models;
+				ctx["discovery"] = discovery;
+			});
 	}
 
 	private static ScriptObject BuildModelContext(ModelDef m)

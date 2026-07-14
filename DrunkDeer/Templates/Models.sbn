@@ -78,6 +78,19 @@ public static class ModelRegistry
         {{- end }}
     ];
 
+    /// <summary>
+    /// (VID, PID) pairs used to find candidate DrunkDeer command interfaces during discovery.
+    /// Generated from the discovery section of protocol/models.yaml. Each entry is a specific
+    /// pair, not a cross-product of independent VID and PID lists (which would accept unrelated
+    /// third-party keyboards sharing a VID). Web WebHID filters and desktop scanning both use it.
+    /// </summary>
+    public static readonly (int Vid, int Pid)[] DiscoveryPairs =
+    [
+        {{- for d in discovery }}
+        ({{ d.vid }}, {{ d.pid }}),
+        {{- end }}
+    ];
+
     private static readonly Dictionary<string, ModelInfo> InfoBySlug = new()
     {
         {{- for m in models }}

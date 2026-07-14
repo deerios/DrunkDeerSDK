@@ -103,6 +103,25 @@ public static class ModelRegistry
         new(0x0B, 0x06, 0x05, ModelSlugs.X60Future, "ansi"),
     ];
 
+    /// <summary>
+    /// (VID, PID) pairs used to find candidate DrunkDeer command interfaces during discovery.
+    /// Generated from the discovery section of protocol/models.yaml. Each entry is a specific
+    /// pair, not a cross-product of independent VID and PID lists (which would accept unrelated
+    /// third-party keyboards sharing a VID). Web WebHID filters and desktop scanning both use it.
+    /// </summary>
+    public static readonly (int Vid, int Pid)[] DiscoveryPairs =
+    [
+        (0x352D, 0x2382),
+        (0x352D, 0x2383),
+        (0x352D, 0x2384),
+        (0x352D, 0x2386),
+        (0x352D, 0x2387),
+        (0x352D, 0x2391),
+        (0x05AC, 0x024F),
+        (0x04D9, 0x2A08),
+        (0x1A85, 0xFC4F),
+    ];
+
     private static readonly Dictionary<string, ModelInfo> InfoBySlug = new()
     {
         [ModelSlugs.A75] = new ModelInfo

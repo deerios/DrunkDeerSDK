@@ -28,6 +28,7 @@ internal static class YamlLoader
 		}
 
 		LoadModels(def, Path.Combine(protocolDir, "models.yaml"));
+		LoadDiscovery(def, Path.Combine(protocolDir, "models.yaml"));
 		LoadProfileBlocks(def, Path.Combine(protocolDir, "profile_blocks.yaml"));
 		return def;
 	}
@@ -210,6 +211,25 @@ internal static class YamlLoader
 		}
 	}
 
+	private static void LoadDiscovery(ProtocolDef def, string path)
+	{
+		var raw = ParseYaml(path);
+		if (!raw.TryGetValue("discovery", out var discObj) || discObj is not Dictionary<object, object> disc)
+			return;
+		if (!disc.TryGetValue("interfaces", out var ifacesObj) || ifacesObj is not List<object> pairs)
+			return;
+
+		foreach (var pairObj in pairs)
+		{
+			if (pairObj is not Dictionary<object, object> pair) continue;
+			if (!pair.TryGetValue("vid", out var vidObj)) continue;
+			int vid = ToHexInt(vidObj);
+			if (!pair.TryGetValue("pids", out var pidsObj) || pidsObj is not List<object> pids) continue;
+			foreach (var pidObj in pids)
+				def.Discovery.Add(new DiscoveryPair { Vid = vid, Pid = ToHexInt(pidObj) });
+		}
+	}
+
 	private static void LoadProfileBlocks(ProtocolDef def, string path)
 	{
 		if (!File.Exists(path)) return;
@@ -271,6 +291,18 @@ internal static class YamlLoader
 		int i => i,
 		long l => (int)l,
 		string s => int.Parse(s),
+		_ => throw new InvalidOperationException($"Cannot convert {obj} ({obj.GetType().Name}) to int"),
+	};
+
+	private static int ToHexInt(object obj) => obj switch
+	{
+		string s => s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+					? Convert.ToInt32(s, 16)
+					: int.Parse(s),
+		// YamlDotNet narrows 0x-prefixed scalars to the smallest fitting integer type, so a
+		// VID/PID lands as Int16 - and one above 0x7FFF (e.g. 0xFC4F) arrives sign-extended
+		// negative. Mask back to the 16-bit unsigned value it represents.
+		sbyte or byte or short or ushort or int or uint or long or ulong => Convert.ToInt32(obj) & 0xFFFF,
 		_ => throw new InvalidOperationException($"Cannot convert {obj} ({obj.GetType().Name}) to int"),
 	};
 

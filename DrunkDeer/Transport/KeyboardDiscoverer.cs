@@ -9,19 +9,6 @@ namespace DrunkDeer.Protocol;
 /// </summary>
 public static class KeyboardDiscoverer
 {
-	// Kept in sync with protocol/models.yaml discovery section. Each entry is a specific
-	// (vid, pid) pair, not a cross-product of independent VID and PID lists - matching the
-	// cross-product would accept e.g. Apple's VID (0x05AC) with an unrelated PID, or Holtek's
-	// VID (0x04D9, used by hundreds of third-party keyboards) with an unrelated PID.
-	private static readonly (int Vid, int Pid)[] KnownIdentifiers =
-	[
-		(0x352D, 0x2382), (0x352D, 0x2383), (0x352D, 0x2384),
-		(0x352D, 0x2386), (0x352D, 0x2387), (0x352D, 0x2391),
-		(0x05AC, 0x024F),
-		(0x04D9, 0x2A08),
-		(0x1A85, 0xFC4F),
-	];
-
 	/// <summary>
 	/// Returns all HID command interfaces that match a known DrunkDeer (VID, PID) pair.
 	/// The command interface has both In and Out report lengths of at least 64 bytes.
@@ -31,7 +18,7 @@ public static class KeyboardDiscoverer
 	public static IReadOnlyList<HidDevice> FindAll() =>
 		DeviceList.Local
 			.GetHidDevices()
-			.Where(d => KnownIdentifiers.Contains((d.VendorID, d.ProductID)))
+			.Where(d => ModelRegistry.DiscoveryPairs.Contains((d.VendorID, d.ProductID)))
 			.Where(IsCommandInterface)
 			.ToList();
 

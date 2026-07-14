@@ -7,6 +7,19 @@ internal sealed class ProtocolDef
 	public Dictionary<string, MessageDef> Messages { get; } = [];
 	public Dictionary<string, ModelDef> Models { get; } = [];
 	public Dictionary<string, ProfileBlockDef> ProfileBlocks { get; } = [];
+
+	/// <summary>
+	/// Flattened (VID, PID) discovery pairs from the discovery section of models.yaml,
+	/// in declaration order. Each entry is a specific pair, not a cross-product.
+	/// </summary>
+	public List<DiscoveryPair> Discovery { get; } = [];
+}
+
+/// <summary>A single (VID, PID) pair used to find candidate DrunkDeer command interfaces.</summary>
+internal sealed class DiscoveryPair
+{
+	public int Vid { get; set; }
+	public int Pid { get; set; }
 }
 
 internal sealed class StructDef
