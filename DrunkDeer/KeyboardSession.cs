@@ -431,7 +431,7 @@ public class KeyboardSession : IDisposable
 	/// <summary>Fired once per complete poll cycle, after all key events for that cycle.</summary>
 	public event EventHandler<PolledEventArgs>? Polled;
 
-	private static PrecisionMode DeterminePrecisionMode(ModelInfo model, byte firmwareVersion)
+	internal static PrecisionMode DeterminePrecisionMode(ModelInfo model, byte firmwareVersion)
 	{
 		if ((model.Capabilities & Capabilities.HighPrecision) != 0) return PrecisionMode.HighPrecision;
 		if ((model.Capabilities & Capabilities.KunPrecision)  != 0) return PrecisionMode.Kun;
