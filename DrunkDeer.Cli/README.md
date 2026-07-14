@@ -146,7 +146,7 @@ Run `deerkb devices` to confirm the exact VID/PID for your model.
 ## Building from source
 
 ```sh
-dotnet build deerkb/deerkb.slnx
-dotnet test  deerkb/deerkb.slnx
-./deerkb/publish.sh 0.1.0     # self-contained binaries + nupkg into deerkb/dist/
+dotnet build DrunkDeer.Cli/DeerKB.slnx
+dotnet test  DrunkDeer.Cli/DeerKB.slnx
+./DrunkDeer.Cli/publish.sh 0.1.0     # self-contained binaries + nupkg into deerkb/dist/
 ```
