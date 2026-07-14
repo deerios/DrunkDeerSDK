@@ -18,6 +18,9 @@ public class TypedSessionModelCheckTests
 		var fake = new FakeKeyboardConnection(ModelRegistry.GetInfo(ModelSlugs.A75));
 		var ex = Assert.Throws<DrunkDeerModelMismatchException>(() => new KeyboardSession<A75Ultra>(fake));
 		Assert.That(ex!.Message, Does.Contain("A75").And.Contain("A75Ultra"));
+		// The typed ctor took ownership of the connection OpenFirst opened, so a mismatch must
+		// dispose it rather than leak the hidraw streams (PLAN-BUG-1).
+		Assert.That(fake.DisposeCount, Is.EqualTo(1));
 	}
 
 	[Test]

@@ -36,6 +36,32 @@ public static class KeyboardDiscoverer
 			.ToList();
 
 	/// <summary>
+	/// Lazily opens every candidate device that completes the identity handshake, yielding one
+	/// live <see cref="KeyboardConnection"/> per keyboard. Candidates that fail the handshake are
+	/// skipped (a shared VID/PID isn't proof it's really a DrunkDeer). The caller owns every
+	/// yielded connection and must dispose the ones it doesn't keep; devices past the point where
+	/// enumeration stops are never opened. Used by typed <c>OpenFirst</c> to scan for a specific
+	/// model and by callers that want to inspect all attached keyboards.
+	/// </summary>
+	public static IEnumerable<KeyboardConnection> OpenAll(ILoggerFactory? loggerFactory = null)
+	{
+		foreach (var device in FindAll())
+		{
+			KeyboardConnection connection;
+			try
+			{
+				connection = KeyboardConnection.Open(device, loggerFactory);
+			}
+			catch
+			{
+				continue;
+			}
+
+			yield return connection;
+		}
+	}
+
+	/// <summary>
 	/// Opens a <see cref="KeyboardConnection"/> on the first candidate device that completes the
 	/// identity handshake. A (vid, pid) match is necessary but not sufficient - e.g. a
 	/// third-party keyboard could still share a known pair - so a candidate that fails the

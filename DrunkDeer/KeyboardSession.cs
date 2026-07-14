@@ -444,33 +444,44 @@ public class KeyboardSession : IDisposable
 	{
 		_log           = (ILogger?)loggerFactory?.CreateLogger<KeyboardSession>() ?? NullLogger.Instance;
 		_connection    = connection;
-		Model          = connection.Model;
-		Variant        = connection.Variant;
-		FirmwareVersion = connection.FirmwareVersion;
-		_precisionMode = DeterminePrecisionMode(Model, FirmwareVersion);
-		MinDepthMm     = Model.MinDepthMm;
-		MaxDepthMm     = _precisionMode == PrecisionMode.Kun ? Model.KunMaxDepthMm : Model.MaxDepthMm;
+		try
+		{
+			Model          = connection.Model;
+			Variant        = connection.Variant;
+			FirmwareVersion = connection.FirmwareVersion;
+			_precisionMode = DeterminePrecisionMode(Model, FirmwareVersion);
+			MinDepthMm     = Model.MinDepthMm;
+			MaxDepthMm     = _precisionMode == PrecisionMode.Kun ? Model.KunMaxDepthMm : Model.MaxDepthMm;
 
-		var layout = KeyLayout.GetLayout(Model.Slug);
-		_rgbIndices      = KeyLayout.GetRgbIndices(Model.Slug, Variant);
-		_keyIndexMap     = KeyLayout.BuildIndexMap(layout);
+			var layout = KeyLayout.GetLayout(Model.Slug);
+			_rgbIndices      = KeyLayout.GetRgbIndices(Model.Slug, Variant);
+			_keyIndexMap     = KeyLayout.BuildIndexMap(layout);
 
-		int profileSize = TotalKeyCount;
-		_actuationProfile = new float[profileSize];
-		Array.Fill(_actuationProfile, 2.0f);
-		// Firmware default RtPress/RtRelease is 25 raw units (0.01 mm/unit) = 0.25 mm
-		// (KeyTriggerConfig.Default). Seeding with 0 would make the first per-key
-		// downstroke/upstroke call fail ValidateDepthMm for every other key still at its
-		// unset default, since MinDepthMm is 0.2 mm.
-		_downstrokeProfile = new float[profileSize];
-		Array.Fill(_downstrokeProfile, 0.25f);
-		_upstrokeProfile   = new float[profileSize];
-		Array.Fill(_upstrokeProfile, 0.25f);
+			int profileSize = TotalKeyCount;
+			_actuationProfile = new float[profileSize];
+			Array.Fill(_actuationProfile, 2.0f);
+			// Firmware default RtPress/RtRelease is 25 raw units (0.01 mm/unit) = 0.25 mm
+			// (KeyTriggerConfig.Default). Seeding with 0 would make the first per-key
+			// downstroke/upstroke call fail ValidateDepthMm for every other key still at its
+			// unset default, since MinDepthMm is 0.2 mm.
+			_downstrokeProfile = new float[profileSize];
+			Array.Fill(_downstrokeProfile, 0.25f);
+			_upstrokeProfile   = new float[profileSize];
+			Array.Fill(_upstrokeProfile, 0.25f);
 
-		_turboEnabled          = connection.InitialTurboValue != 0;
-		_rapidTriggerEnabled   = connection.InitialRapidTriggerEnabled != 0;
-		_lastWinRtMode         = (LastWinRapidTriggerMode)connection.InitialLastWinValue;
-		_rapidTriggerAutoMatch = connection.InitialRapidTriggerAutoMatch != 0;
+			_turboEnabled          = connection.InitialTurboValue != 0;
+			_rapidTriggerEnabled   = connection.InitialRapidTriggerEnabled != 0;
+			_lastWinRtMode         = (LastWinRapidTriggerMode)connection.InitialLastWinValue;
+			_rapidTriggerAutoMatch = connection.InitialRapidTriggerAutoMatch != 0;
+		}
+		catch
+		{
+			// OpenFirst hands us a connection it just opened; if construction fails partway
+			// (e.g. an unknown model slug has no key layout), dispose it here so the hidraw
+			// streams don't stay open and lock the keyboard against the next opener.
+			connection.Dispose();
+			throw;
+		}
 	}
 
 	/// <summary>
@@ -491,6 +502,10 @@ public class KeyboardSession : IDisposable
 
 		_log.LogInformation("Starting poll loop (PressThresholdMm={P}, ReleaseThresholdMm={R}, PrecisionMode={PM})",
 			PressThresholdMm, ReleaseThresholdMm, _precisionMode);
+		// When the previous loop exited on its own (e.g. a disconnect) StopPolling never ran, so
+		// the old CTS is still here and un-disposed. Dispose it before overwriting to avoid leaking
+		// it. After a normal StopPolling this is null, so the null-conditional is a no-op.
+		_pollCts?.Dispose();
 		_pollCts  = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 		_pollTask = Task.Run(() => PollLoop(_pollCts.Token), _pollCts.Token);
 	}

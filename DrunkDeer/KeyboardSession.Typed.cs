@@ -24,18 +24,44 @@ public sealed class KeyboardSession<TModel> : KeyboardSession
         // with a plain A75 connected would compile and "work" until an A75Ultra-only method threw
         // NotSupportedException (or worse, silently misbehaved) at some arbitrary later call.
         if (connection.Model.Slug != TModel.Slug)
+        {
+            // Base construction succeeded and took ownership of the just-opened connection.
+            // Dispose it before rejecting the mismatch, otherwise the hidraw streams leak and
+            // the keyboard reports "in use by another process" to the next opener until GC.
+            connection.Dispose();
             throw new DrunkDeerModelMismatchException(
                 $"Connected keyboard is a {connection.Model.Name} (slug '{connection.Model.Slug}'), " +
                 $"but KeyboardSession<{typeof(TModel).Name}> expects slug '{TModel.Slug}'. " +
                 $"Use the untyped KeyboardSession.OpenFirst() or the marker type matching the connected model.");
+        }
     }
 
     /// <summary>
-    /// Opens the first connected DrunkDeer keyboard and returns a typed session.
-    /// Throws <see cref="DrunkDeerDeviceNotFoundException"/> if no compatible device is found,
-    /// or <see cref="DrunkDeerModelMismatchException"/> if the connected keyboard's model
-    /// doesn't match <typeparamref name="TModel"/>.
+    /// Opens the first connected DrunkDeer keyboard whose model matches <typeparamref name="TModel"/>
+    /// and returns a typed session. With several keyboards attached this scans past ones of other
+    /// models instead of binding whichever completes the handshake first.
+    /// Throws <see cref="DrunkDeerModelMismatchException"/> if a device was found but none matched
+    /// <typeparamref name="TModel"/> (the message lists what was found), or
+    /// <see cref="DrunkDeerDeviceNotFoundException"/> if no DrunkDeer keyboard is present at all.
     /// </summary>
-    public static new KeyboardSession<TModel> OpenFirst(ILoggerFactory? loggerFactory = null) =>
-        new(KeyboardDiscoverer.OpenFirst(loggerFactory), loggerFactory);
+    public static new KeyboardSession<TModel> OpenFirst(ILoggerFactory? loggerFactory = null)
+    {
+        var rejected = new List<string>();
+        foreach (var connection in KeyboardDiscoverer.OpenAll(loggerFactory))
+        {
+            if (connection.Model.Slug == TModel.Slug)
+                return new KeyboardSession<TModel>(connection, loggerFactory);
+
+            // Handshook, but it's the wrong model for this typed session. Dispose it so the
+            // streams aren't leaked, note what it was, and keep scanning the remaining candidates.
+            rejected.Add($"{connection.Model.Name} (slug '{connection.Model.Slug}')");
+            connection.Dispose();
+        }
+
+        throw new DrunkDeerModelMismatchException(rejected.Count == 0
+            ? $"No DrunkDeer keyboard completed the identity handshake, so none could be matched " +
+              $"to KeyboardSession<{typeof(TModel).Name}> (slug '{TModel.Slug}')."
+            : $"No connected keyboard matches KeyboardSession<{typeof(TModel).Name}> (slug '{TModel.Slug}'). " +
+              $"Found: {string.Join(", ", rejected)}.");
+    }
 }
