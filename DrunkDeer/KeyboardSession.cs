@@ -160,7 +160,7 @@ public enum LightingMode : byte
 /// poll loop and raises typed events for key travel changes, presses, and releases.
 /// Also exposes configuration methods for actuation points, lighting, and global options.
 /// </summary>
-public class KeyboardSession : IDisposable
+public partial class KeyboardSession : IDisposable, IAsyncDisposable
 {
 	private readonly ILogger _log;
 
@@ -177,6 +177,9 @@ public class KeyboardSession : IDisposable
 	private static readonly int[] HpSectionSizes = [30, 30, 30, 30, 6];
 
 	private readonly IKeyboardConnection _connection;
+	// Non-null when _connection also implements the async surface (or when the session was opened
+	// over an async-only connection). Drives the non-blocking async API; see KeyboardSession.Async.cs.
+	private readonly IKeyboardConnectionAsync? _asyncConnection;
 	private readonly PrecisionMode _precisionMode;
 	private readonly short[] _heights = new short[KeyCount];
 	private readonly bool[] _pressed = new bool[KeyCount];
@@ -444,6 +447,10 @@ public class KeyboardSession : IDisposable
 	{
 		_log           = (ILogger?)loggerFactory?.CreateLogger<KeyboardSession>() ?? NullLogger.Instance;
 		_connection    = connection;
+		// A connection that also implements the async surface (the desktop KeyboardConnection,
+		// the simulator, the fake) lets this session drive the non-blocking async path. A sync-only
+		// connection leaves this null and the *Async methods throw a clear error.
+		_asyncConnection = connection as IKeyboardConnectionAsync;
 		try
 		{
 			Model          = connection.Model;
@@ -489,7 +496,7 @@ public class KeyboardSession : IDisposable
 	/// and returns a ready-to-use <see cref="KeyboardSession"/>.
 	/// </summary>
 	public static KeyboardSession OpenFirst(ILoggerFactory? loggerFactory = null) =>
-		new(KeyboardDiscoverer.OpenFirst(loggerFactory), loggerFactory);
+		new((IKeyboardConnection)KeyboardDiscoverer.OpenFirst(loggerFactory), loggerFactory);
 
 	/// <summary>
 	/// Builds a session over a caller-supplied connection. Use this to drive the

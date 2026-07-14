@@ -1,0 +1,169 @@
+using DrunkDeer.FeatureTests.Fakes;
+using DrunkDeer.Protocol;
+using DrunkDeer.Simulation;
+using NUnit.Framework;
+
+namespace DrunkDeer.FeatureTests.Features;
+
+/// <summary>
+/// Coverage for the async transport/session surface (Phase 0 §3.1): the non-blocking poll loop,
+/// configuration commands interleaving between poll frames, and cancellation of a pending receive.
+/// </summary>
+[TestFixture]
+public class AsyncTransportTests
+{
+	/// <summary>Builds a 64-byte standard-precision 0xB7 travel packet for one packet of a frame.</summary>
+	private static byte[] BuildB7Packet(byte packetIndex, byte firstKeyValue)
+	{
+		var buf = new byte[64];
+		buf[0] = 0xB7;
+		buf[3] = packetIndex;
+		buf[4] = firstKeyValue;
+		return buf;
+	}
+
+	[Test]
+	public async Task AsyncPollLoop_DispatchesFramesFromFake()
+	{
+		var fake = new FakeKeyboardConnection(); // A75, standard precision, 3-packet frames
+		await using var session = KeyboardSession.OpenAsyncConnection(fake);
+
+		int framesDispatched = 0;
+		session.Polled += (_, _) => Interlocked.Increment(ref framesDispatched);
+
+		void EnqueueFrame(byte value)
+		{
+			fake.EnqueueResponse(BuildB7Packet(0, value));
+			fake.EnqueueResponse(BuildB7Packet(1, value));
+			fake.EnqueueResponse(BuildB7Packet(2, value));
+		}
+
+		// The loop flushes once at startup before frames can be staged; pause there so the frames
+		// below survive (same technique the sync PollLoop tests use).
+		fake.PauseAfterNextFlush();
+		await session.StartPollingAsync();
+		try
+		{
+			var startDeadline = DateTime.UtcNow.AddSeconds(5);
+			while (fake.FlushCount < 1 && DateTime.UtcNow < startDeadline)
+				await Task.Delay(1);
+			Assert.That(fake.FlushCount, Is.GreaterThanOrEqualTo(1), "Async poll loop never reached its startup flush.");
+
+			EnqueueFrame(10);
+			EnqueueFrame(20);
+			fake.ResumeAfterFlush();
+
+			var deadline = DateTime.UtcNow.AddSeconds(5);
+			while (Volatile.Read(ref framesDispatched) < 2 && DateTime.UtcNow < deadline)
+				await Task.Delay(1);
+
+			Assert.That(Volatile.Read(ref framesDispatched), Is.GreaterThanOrEqualTo(2),
+				"Async poll loop did not dispatch the staged frames.");
+			Assert.That(session.IsPolling, Is.True, "Async poll loop exited unexpectedly.");
+		}
+		finally
+		{
+			Assert.That(await session.StopPollingAsync(), Is.True, "Async poll loop did not stop cleanly.");
+			Assert.That(session.IsPolling, Is.False);
+		}
+	}
+
+	[Test]
+	public async Task ConfigCommand_InterleavesWithRunningAsyncPollLoop()
+	{
+		// The simulator stages travel frames on the poll request and answers config writes with a
+		// separate synthesized ACK, so a config command can complete while the poll loop runs
+		// without the two contending for one response queue.
+		var sim = new SimulatedKeyboardConnection(); // A75, standard precision
+		await using var session = KeyboardSession.OpenAsyncConnection(sim);
+
+		int keyDowns = 0;
+		session.KeyDown += (_, _) => Interlocked.Increment(ref keyDowns);
+
+		await session.StartPollingAsync();
+		try
+		{
+			// Press a key: the next synthesized frame should raise KeyDown while the loop runs.
+			sim.SetKeyTravelMm(0, 2.0f); // 2.0 mm > default 1.0 mm press threshold
+			var pressDeadline = DateTime.UtcNow.AddSeconds(5);
+			while (Volatile.Read(ref keyDowns) == 0 && DateTime.UtcNow < pressDeadline)
+				await Task.Delay(1);
+			Assert.That(Volatile.Read(ref keyDowns), Is.GreaterThanOrEqualTo(1),
+				"Async poll loop never raised KeyDown for the pressed key.");
+
+			// Now issue a configuration write WITHOUT stopping the loop. It must complete (the wire
+			// gate lets it run between frames) and not throw.
+			Assert.That(session.IsPolling, Is.True, "Loop should still be polling before the config write.");
+			await session.SetActuationPointAsync(0.5f);
+			Assert.That(session.IsPolling, Is.True, "Async poll loop stopped when a config command interleaved.");
+		}
+		finally
+		{
+			Assert.That(await session.StopPollingAsync(), Is.True);
+		}
+	}
+
+	[Test]
+	public void ReceiveCommandAsync_AlreadyCancelledToken_Throws()
+	{
+		var fake = new FakeKeyboardConnection();
+		using var cts = new CancellationTokenSource();
+		cts.Cancel();
+
+		Assert.ThrowsAsync<OperationCanceledException>(async () =>
+			await fake.ReceiveCommandAsync(1000, cts.Token));
+	}
+
+	[Test]
+	public async Task ReceiveCommandAsync_CancelledWhilePending_Throws()
+	{
+		var fake = new FakeKeyboardConnection(); // empty queue → the receive waits out its timeout
+		using var cts = new CancellationTokenSource();
+
+		var pending = fake.ReceiveCommandAsync(5000, cts.Token);
+		await Task.Delay(20); // let the receive start waiting
+		cts.Cancel();
+
+		// CatchAsync (not ThrowsAsync) so the derived TaskCanceledException from Task.Delay counts.
+		Assert.CatchAsync<OperationCanceledException>(async () => await pending);
+	}
+
+	[Test]
+	public async Task AsyncOnlySession_RejectsBlockingApi()
+	{
+		// A session opened over an async-only connection (the WebHID case) must steer callers to
+		// the *Async API rather than silently blocking.
+		var asyncOnly = new AsyncOnlyConnection();
+		await using var session = KeyboardSession.OpenAsyncConnection(asyncOnly);
+
+		Assert.That(session.SupportsAsync, Is.True);
+		// A synchronous config call hits the shim's blocking transport and is rejected outright.
+		Assert.Throws<InvalidOperationException>(() => session.SetActuationPoint(0.5f));
+		// The async surface, by contrast, works.
+		await session.StartPollingAsync();
+		Assert.That(await session.StopPollingAsync(), Is.True);
+	}
+
+	/// <summary>A connection that implements only <see cref="IKeyboardConnectionAsync"/> (no blocking transport), like WebHID.</summary>
+	private sealed class AsyncOnlyConnection : IKeyboardConnectionAsync
+	{
+		public ModelInfo Model { get; } = ModelRegistry.GetInfo(ModelSlugs.A75)!;
+		public string Variant => "ansi";
+		public byte FirmwareVersion => 1;
+		public bool HasDataStream => false;
+		public byte InitialTurboValue => 0;
+		public byte InitialRapidTriggerEnabled => 0;
+		public byte InitialLastWinValue => 0;
+		public byte InitialRapidTriggerAutoMatch => 0;
+
+		public ValueTask SendAsync(byte[] packet, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+		public ValueTask<byte[]?> SendAndReceiveAsync(byte[] packet, int timeoutMs = 1000, CancellationToken cancellationToken = default) => new((byte[]?)null);
+		public async ValueTask<byte[]?> ReceiveCommandAsync(int timeoutMs = 1000, CancellationToken cancellationToken = default)
+		{
+			if (timeoutMs > 0) await Task.Delay(timeoutMs, cancellationToken).ConfigureAwait(false);
+			return null;
+		}
+		public ValueTask FlushReadBufferAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+		public void Dispose() { }
+	}
+}

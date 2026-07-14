@@ -18,7 +18,7 @@ namespace DrunkDeer.Simulation;
 /// keeps those paths from failing. Only the A75 is verified hardware, so frame values here are
 /// synthetic, not a capture.
 /// </remarks>
-public sealed class SimulatedKeyboardConnection : IKeyboardConnection
+public sealed class SimulatedKeyboardConnection : IKeyboardConnection, IKeyboardConnectionAsync
 {
 	// Mirror of KeyboardSession's layout constants (private there): 3 standard B7 packets vs
 	// 5 high-precision 0xFD/0x06 sections, and their per-packet key ranges.
@@ -134,6 +134,44 @@ public sealed class SimulatedKeyboardConnection : IKeyboardConnection
 	{
 		lock (_gate)
 			_pending.Clear();
+	}
+
+	// ── Async transport (IKeyboardConnectionAsync) ────────────────────────────
+	// Mirrors the sync surface. Sends stage/ack synchronously (cheap, no I/O); a receive
+	// on an empty queue waits out the timeout honouring cancellation, matching a real
+	// keyboard's blocking read so the async poll loop paces itself the same way.
+
+	public ValueTask SendAsync(byte[] packet, CancellationToken cancellationToken = default)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		Send(packet);
+		return ValueTask.CompletedTask;
+	}
+
+	public ValueTask<byte[]?> SendAndReceiveAsync(byte[] packet, int timeoutMs = 1000, CancellationToken cancellationToken = default)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		return new(SendAndReceive(packet, timeoutMs));
+	}
+
+	public async ValueTask<byte[]?> ReceiveCommandAsync(int timeoutMs = 1000, CancellationToken cancellationToken = default)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		lock (_gate)
+		{
+			if (_pending.Count > 0)
+				return _pending.Dequeue();
+		}
+		if (timeoutMs > 0)
+			await Task.Delay(timeoutMs, cancellationToken).ConfigureAwait(false);
+		return null;
+	}
+
+	public ValueTask FlushReadBufferAsync(CancellationToken cancellationToken = default)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		FlushReadBuffer();
+		return ValueTask.CompletedTask;
 	}
 
 	public void Dispose() { }

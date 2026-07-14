@@ -86,6 +86,29 @@ non-tearing writes. Configuration methods (`SetActuationPoint`, `SetKeyColor`, `
 (`EnsureNotPolling()` throws otherwise) - don't call them concurrently from multiple threads,
 and don't call them from an event handler running on the poll thread while polling is active.
 
+### Async API (single-threaded hosts / Blazor WebAssembly)
+
+The blocking API above is fine on desktop but fatal where there is only one thread (WASM), so the
+SDK also exposes a non-blocking surface built on `IKeyboardConnectionAsync`:
+
+- `StartPollingAsync()` / `StopPollingAsync()` run the poll loop with awaited I/O - no background
+  thread is blocked. Events still fire from the loop; marshal to the UI context yourself.
+- Async configuration twins (`SetActuationPointAsync`, `SetKeyColorAsync`,
+  `SetLightingModeAsync`, `EnableRapidTriggerAsync`, `ApplyProfileAsync`, ...) await their writes.
+- **Config can run while polling.** A single wire gate serialises the async path, so an async
+  config command runs *between* poll frames instead of requiring `StopPolling()` first - a
+  live actuation-slider drag can keep the heatmap running. (The `EnsureNotPolling()` restriction
+  still applies to the **synchronous** methods.)
+- Don't mix the two paths on one session: the sync poll loop doesn't take the wire gate, so
+  issuing async commands while a *synchronous* poll loop runs throws. Pick sync (desktop) or
+  async (WASM) per session.
+
+The desktop `KeyboardConnection`, the `SimulatedKeyboardConnection`, and the test fake implement
+both transport interfaces, so a session opened with `KeyboardSession.Open(connection)` gains the
+async surface automatically (`session.SupportsAsync`). A browser (WebHID) connection implements
+only `IKeyboardConnectionAsync`; open it with `KeyboardSession.OpenAsyncConnection(connection)`
+and use `await using` / `DisposeAsync()`. On such an async-only session the blocking methods throw.
+
 ## Actuation, downstroke, and upstroke
 
 ```csharp

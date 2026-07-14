@@ -8,7 +8,7 @@ namespace DrunkDeer.Protocol;
 /// An open connection to a DrunkDeer keyboard. Performs the identity handshake on
 /// construction and exposes typed send/receive over the underlying HID interface.
 /// </summary>
-public sealed class KeyboardConnection : IKeyboardConnection
+public sealed class KeyboardConnection : IKeyboardConnection, IKeyboardConnectionAsync
 {
 	// Highest byte offset IdentityResponse's accessors read (GetLastWinReplace(buf) => buf[32])
 	// plus one. IdentityResponse.Matches itself only requires the 3-byte header.
@@ -224,6 +224,37 @@ public sealed class KeyboardConnection : IKeyboardConnection
 
 	/// <summary>Drains any buffered input on both streams without blocking.</summary>
 	public void FlushReadBuffer() => _transport.FlushReadBuffer();
+
+	// ── Async transport (IKeyboardConnectionAsync) ────────────────────────────
+	// HidSharp's stream is blocking-only, so the async surface offloads the blocking
+	// read/write to the thread pool. That's acceptable on desktop (where threads are
+	// plentiful); the point of the async seam is single-threaded hosts (WASM), which
+	// use a native-async connection like WebHID instead of this one. The token cancels
+	// the wait to *enqueue*/observe the work, not an in-flight native HID read.
+
+	/// <summary>Sends a pre-built packet with no response expected.</summary>
+	public ValueTask SendAsync(byte[] packet, CancellationToken cancellationToken = default)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		_transport.Send(packet);
+		return ValueTask.CompletedTask;
+	}
+
+	/// <summary>Sends a packet and awaits the next command-stream response.</summary>
+	public ValueTask<byte[]?> SendAndReceiveAsync(byte[] packet, int timeoutMs = 1000, CancellationToken cancellationToken = default) =>
+		new(Task.Run(() =>
+		{
+			_transport.Send(packet);
+			return _transport.ReceiveCommand(timeoutMs);
+		}, cancellationToken));
+
+	/// <summary>Awaits the next command-stream response.</summary>
+	public ValueTask<byte[]?> ReceiveCommandAsync(int timeoutMs = 1000, CancellationToken cancellationToken = default) =>
+		new(Task.Run(() => _transport.ReceiveCommand(timeoutMs), cancellationToken));
+
+	/// <summary>Drains any buffered input without blocking on new data.</summary>
+	public ValueTask FlushReadBufferAsync(CancellationToken cancellationToken = default) =>
+		new(Task.Run(() => _transport.FlushReadBuffer(), cancellationToken));
 
 	public void Dispose() => _transport.Dispose();
 }
