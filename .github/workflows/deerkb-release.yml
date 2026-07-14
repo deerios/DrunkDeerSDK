@@ -1,0 +1,90 @@
+name: deerkb release
+
+# Publishes self-contained `deerkb` binaries (and the dotnet-tool nupkg) when a
+# tag like `deerkb-v0.1.0` is pushed.
+on:
+  push:
+    tags:
+      - 'deerkb-v*'
+
+jobs:
+  binaries:
+    name: build ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  rid: linux-x64 }
+          - { os: ubuntu-latest,  rid: linux-arm64 }
+          - { os: windows-latest, rid: win-x64 }
+          - { os: windows-latest, rid: win-arm64 }
+          - { os: macos-latest,   rid: osx-x64 }
+          - { os: macos-latest,   rid: osx-arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Derive version from tag
+        id: ver
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#deerkb-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish self-contained single file
+        shell: bash
+        run: |
+          dotnet publish deerkb/src/deerkb.csproj -c Release -r ${{ matrix.rid }} \
+            --self-contained true -p:PublishSingleFile=true \
+            -p:Version=${{ steps.ver.outputs.version }} \
+            -o out --nologo
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [[ "${{ matrix.rid }}" == win-* ]]; then
+            cp out/deerkb.exe dist/deerkb-${{ matrix.rid }}.exe
+          else
+            cp out/deerkb dist/deerkb-${{ matrix.rid }}
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deerkb-${{ matrix.rid }}
+          path: dist/*
+
+  tool-package:
+    name: pack dotnet tool
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#deerkb-v}" >> "$GITHUB_OUTPUT"
+      - name: Pack
+        run: dotnet pack deerkb/src/deerkb.csproj -c Release -p:Version=${{ steps.ver.outputs.version }} -o dist --nologo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deerkb-nupkg
+          path: dist/*.nupkg
+
+  release:
+    name: attach to GitHub Release
+    needs: [binaries, tool-package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
