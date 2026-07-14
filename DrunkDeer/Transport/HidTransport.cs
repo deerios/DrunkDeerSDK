@@ -61,13 +61,12 @@ internal sealed class HidTransport : IDisposable
 	/// command stream. Returns <c>null</c> on timeout.
 	/// </summary>
 	/// <remarks>
-	/// API-12: <see cref="KeyboardSession"/>'s poll loop calls <see cref="ReceiveCommand"/>
-	/// exclusively, never this method - so today the data stream, when found, is opened and
-	/// flushed but nothing ever drains it during normal operation (only unsolicited reports
-	/// accumulate in the OS buffer until the next <see cref="FlushReadBuffer"/>). Moving travel
-	/// polling onto this method would separate the unsolicited stream from command/ACK traffic
-	/// and remove the POLL-1 interleaving failure class entirely, but that's a bigger change than
-	/// a bug fix (roadmap item E-3) - left as-is here.
+	/// <see cref="KeyboardSession"/>'s poll loop calls <see cref="ReceiveCommand"/> exclusively,
+	/// never this method, so today the data stream (when one is found) is opened and flushed but
+	/// nothing drains it during normal operation - only unsolicited reports accumulate in the OS
+	/// buffer until the next <see cref="FlushReadBuffer"/>. Moving travel polling onto this method
+	/// would separate the unsolicited stream from command/ACK traffic and avoid interleaving them,
+	/// but that is a larger change than the current fixes warrant.
 	/// </remarks>
 	public byte[]? Receive(int timeoutMs = 1000) =>
 		ReadFrom(_data ?? _command, timeoutMs, _data is not null ? "DATA" : "CMD");

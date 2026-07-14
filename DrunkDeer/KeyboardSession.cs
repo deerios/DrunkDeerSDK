@@ -517,9 +517,9 @@ public class KeyboardSession : IDisposable
 		}
 		catch (AggregateException ex)
 		{
-			// The loop itself now swallows and logs handler exceptions (POLL-2), so a fault here
-			// means something genuinely unexpected happened in PollLoop. The task is done either
-			// way, so treat it as stopped rather than leaving the caller to catch this themselves.
+			// The loop swallows and logs handler exceptions itself, so a fault reaching here means
+			// something genuinely unexpected happened in PollLoop. The task is finished either
+			// way, so treat it as stopped rather than surfacing this to the caller.
 			_log.LogError(ex.Flatten(), "Poll loop task faulted while stopping.");
 			completed = true;
 		}
@@ -1158,10 +1158,10 @@ public class KeyboardSession : IDisposable
 		var sectionBytes = new byte[60];
 
 		// WriteKeyPointAcknowledgeHighPrecision.Matches accepts any 0xFD packet, which collides
-		// with 0xFD 0x06 travel frames (TRN-4). If polling just stopped, a straggler travel
-		// packet can still be sitting in the read buffer and get mistaken for this write's ACK,
-		// letting the loop believe the write succeeded while the real ACK (or failure) is never
-		// actually observed. Flush before the first send to clear anything left over.
+		// with the 0xFD 0x06 travel frames the keyboard streams. If polling just stopped, a
+		// straggler travel packet can still be sitting in the read buffer and get mistaken for
+		// this write's ACK, making the loop believe the write succeeded while the real ACK (or
+		// failure) is never observed. Flush before the first send to clear anything left over.
 		_connection.FlushReadBuffer();
 
 		for (int sec = 0; sec < 5; sec++)
@@ -2046,12 +2046,11 @@ public class KeyboardSession : IDisposable
 	//   Read  checksum = (addr_lo + addr_hi + len)                   & 0xFF
 	//   Write checksum = (len + addr_lo + addr_hi + is_last + Σdata) & 0xFF
 
-	// PROTO-1: the reply's echoed sub-command/address/length (bytes 1-7 of the 0xAA response,
-	// currently unread/treated as reserved) are never compared against what was requested, so a
-	// stale or reordered gateway response would reassemble into the wrong offset of `result`
-	// with no error - subtle profile-data corruption on read. Fixing this requires a capture of
-	// the real echo layout (which fields are at which offsets) to add to ExtendedGatewayResponse
-	// in the protocol YAML and validate per chunk; left as unverified/undone here.
+	// Known limitation: the reply's echoed sub-command/address/length (bytes 1-7 of the 0xAA
+	// response, currently unread and treated as reserved) are never compared against what was
+	// requested. A stale or reordered gateway response therefore reassembles into the wrong
+	// offset of `result` with no error. Validating them would need a hardware capture of the real
+	// echo layout to add those fields to ExtendedGatewayResponse in the protocol YAML.
 	private byte[] ReadExtendedGateway(byte subCmd, int baseAddr, int totalBytes)
 	{
 		EnsureHasFuncBlock();
@@ -2112,13 +2111,11 @@ public class KeyboardSession : IDisposable
 				"Brightness must be 0–9.");
 	}
 
-	// PROTO-3: the YAML documents the wire range for light_speed/logo_light_speed/
-	// side_light_speed as raw 0-4, *inverted* (0 = fastest, 4 = slowest), but this validates and
-	// passes through 0-9 unchanged - so speed: 9 writes an out-of-range raw byte, and higher
-	// "faster" numbers actually animate slower on the wire. Deciding the right fix (clamp/rescale
-	// 0-9 -> 0-4 inverted here, or change the public unit to 0-4 and teach the generator an
-	// inverted-range YAML annotation) needs confirming the 0-4 range against a capture first;
-	// left unverified/undone here rather than guessing at the transform.
+	// Known limitation: the YAML documents the wire range for light_speed/logo_light_speed/
+	// side_light_speed as raw 0-4, inverted (0 = fastest, 4 = slowest), but this validates and
+	// passes 0-9 through unchanged - so speed: 9 writes an out-of-range raw byte, and higher
+	// "faster" numbers actually animate slower on the wire. The correct 0-9 -> 0-4 inverted
+	// mapping needs the 0-4 range confirmed against a hardware capture first.
 	private static void ValidateSpeed(byte speed)
 	{
 		if (speed > 9)
@@ -2862,10 +2859,9 @@ public class KeyboardSession : IDisposable
 	/// configurations stored on the keyboard are erased.
 	/// </summary>
 	/// <remarks>
-	/// PROTO-4: the opcode <c>[0x06, 0x0F, 0xFF]</c> is unverified against a capture of the
-	/// official app - no other message in this protocol starts with <c>0x06</c>. No response is
-	/// checked either, so a failed or rejected request looks identical to success. Internal
-	/// (not exposed publicly) until both are confirmed on real hardware.
+	/// The opcode <c>[0x06, 0x0F, 0xFF]</c> is unverified - no other message in this protocol
+	/// starts with <c>0x06</c> - and no response is checked, so a failed or rejected request
+	/// looks identical to success. Kept internal until both are confirmed on real hardware.
 	/// </remarks>
 	internal void RestoreFactorySettings()
 	{
