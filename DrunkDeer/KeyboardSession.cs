@@ -1800,7 +1800,8 @@ public class KeyboardSession : IDisposable
 
 	private void ApplyTheme(KeyboardTheme theme)
 	{
-		var (br, bg, bb) = theme.BaseColor;
+		var baseColor = theme.BaseBrightness is { } level ? theme.BaseColor.Scale(level) : theme.BaseColor;
+		var (br, bg, bb) = baseColor;
 		for (int i = 0; i < _rgbIndices.Length; i++)
 			_rgbProfile[_rgbIndices[i]] = (br, bg, bb);
 

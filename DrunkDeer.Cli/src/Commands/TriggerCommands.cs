@@ -17,7 +17,7 @@ public static class TriggerCommands
 		{
 			ctx.Confirm.Require("Enable Rapid Trigger");
 			s.EnableRapidTrigger(parse.GetValue(autoMatch));
-		})));
+		}, new KeyboardProfile { RapidTrigger = true, RapidTriggerAutoMatch = parse.GetValue(autoMatch) })));
 		group.Subcommands.Add(on);
 
 		var off = new Command("off", "Disable Rapid Trigger.");
@@ -25,7 +25,7 @@ public static class TriggerCommands
 		{
 			ctx.Confirm.Require("Disable Rapid Trigger");
 			s.DisableRapidTrigger();
-		})));
+		}, new KeyboardProfile { RapidTrigger = false })));
 		group.Subcommands.Add(off);
 
 		return group;
@@ -41,7 +41,7 @@ public static class TriggerCommands
 			RequireTurbo(s);
 			ctx.Confirm.Require("Enable Turbo mode");
 			s.EnableTurboMode();
-		})));
+		}, new KeyboardProfile { TurboMode = true })));
 		group.Subcommands.Add(on);
 
 		var off = new Command("off", "Disable Turbo mode.");
@@ -50,7 +50,7 @@ public static class TriggerCommands
 			RequireTurbo(s);
 			ctx.Confirm.Require("Disable Turbo mode");
 			s.DisableTurboMode();
-		})));
+		}, new KeyboardProfile { TurboMode = false })));
 		group.Subcommands.Add(off);
 
 		return group;
@@ -62,10 +62,11 @@ public static class TriggerCommands
 			throw CliException.Unsupported($"Turbo mode is not supported on {s.Model.Slug} ({s.Model.Name}).");
 	}
 
-	private static int Set(CliContext ctx, string feature, bool enabled, Action<KeyboardSession> apply)
+	private static int Set(CliContext ctx, string feature, bool enabled, Action<KeyboardSession> apply, KeyboardProfile changes)
 	{
 		using var session = ctx.OpenSession();
 		apply(session);
+		ProfileStore.PersistIfRequested(ctx, changes);
 		ctx.Output.Emit(new { feature, enabled }, () =>
 			ctx.Output.Line($"{feature} {(enabled ? "enabled" : "disabled")}."));
 		return ExitCode.Ok;

@@ -22,18 +22,27 @@ public static class LightCommand
 		var keysOpt = new Option<string?>("--keys", "-k") { Description = "Apply only to these keys (e.g. wasd, Esc)." };
 		var baseOpt = new Option<string?>("--base") { Description = "Base colour for keys not in --keys (default: keeps board off elsewhere)." };
 		var brightnessOpt = new Option<int>("--brightness", "-b") { Description = "Brightness 0–9 (default 9).", DefaultValueFactory = _ => 9 };
+		var baseBrightnessOpt = new Option<int?>("--base-brightness") { Description = "Dim --base independently of --brightness (0–9). The firmware has one brightness per frame, so this scales --base's RGB values in software instead." };
 
-		var set = new Command("set", "Set a solid colour, optionally per key.") { colorArg, keysOpt, baseOpt, brightnessOpt };
+		var set = new Command("set", "Set a solid colour, optionally per key.") { colorArg, keysOpt, baseOpt, brightnessOpt, baseBrightnessOpt };
 		set.SetAction(parse => CommandRunner.Execute(g, parse, ctx =>
 		{
 			using var session = ctx.OpenSession();
 			byte brightness = Brightness(parse.GetValue(brightnessOpt));
 			var color = ColorParser.Parse(parse.GetValue(colorArg)!);
 			var keysSpec = parse.GetValue(keysOpt);
+			byte? baseBrightness = parse.GetValue(baseBrightnessOpt) is { } bb0 ? Brightness(bb0) : null;
 
 			if (string.IsNullOrWhiteSpace(keysSpec))
 			{
+				if (baseBrightness is not null)
+					throw CliException.Usage("--base-brightness needs --keys (there's no separate base color without it).");
+
 				session.SetUniformLighting(color, brightness);
+				ProfileStore.PersistIfRequested(ctx, new KeyboardProfile
+				{
+					Theme = new KeyboardThemeBuilder().Base(color).Brightness(brightness).Build(),
+				});
 				ctx.Output.Emit(new { applied = true, color = Hex(color), brightness, keys = (string[]?)null },
 					() => ctx.Output.Line($"Set all keys to {Hex(color)} at brightness {brightness}."));
 				return ExitCode.Ok;
@@ -45,12 +54,19 @@ public static class LightCommand
 
 			// Per-key colour writes the whole RGB frame; unlisted keys take --base (default off/black).
 			var baseColor = parse.GetValue(baseOpt) is { } b ? ColorParser.Parse(b) : new RgbColor(0, 0, 0);
-			session.SetUniformLighting(baseColor, brightness);
+			var effectiveBase = baseBrightness is { } bb1 ? baseColor.Scale(bb1) : baseColor;
+			session.SetUniformLighting(effectiveBase, brightness);
 			session.SetKeyColor(color, brightness, keys);
 
+			var themeBuilder = new KeyboardThemeBuilder().Base(baseColor).Brightness(brightness).Keys(keys, color.R, color.G, color.B);
+			if (baseBrightness is { } bbTheme)
+				themeBuilder.BaseBrightness(bbTheme);
+			ProfileStore.PersistIfRequested(ctx, new KeyboardProfile { Theme = themeBuilder.Build() });
+
 			ctx.Output.Emit(
-				new { applied = true, color = Hex(color), baseColor = Hex(baseColor), brightness, keys = keys.Select(k => k.ToString()).ToArray() },
-				() => ctx.Output.Line($"Set {keys.Length} key(s) to {Hex(color)}, others to {Hex(baseColor)}, brightness {brightness}."));
+				new { applied = true, color = Hex(color), baseColor = Hex(baseColor), brightness, baseBrightness, keys = keys.Select(k => k.ToString()).ToArray() },
+				() => ctx.Output.Line($"Set {keys.Length} key(s) to {Hex(color)}, others to {Hex(effectiveBase)}" +
+					(baseBrightness is { } bbv ? $" (base brightness {bbv})" : "") + $", brightness {brightness}."));
 			return ExitCode.Ok;
 		}));
 		return set;
@@ -70,6 +86,8 @@ public static class LightCommand
 			byte brightness = Brightness(parse.GetValue(brightnessOpt));
 			byte speed = Speed(parse.GetValue(speedOpt));
 			session.SetLightingMode(lm, brightness, speed);
+			if (ctx.Options.Persist is not null)
+				ctx.Output.Note("Lighting animations aren't part of the saved profile schema (only static colors persist); skipping --persist.");
 			ctx.Output.Emit(new { applied = true, mode = lm.ToString(), brightness, speed },
 				() => ctx.Output.Line($"Lighting mode set to {lm} (brightness {brightness}, speed {speed})."));
 			return ExitCode.Ok;
@@ -84,6 +102,10 @@ public static class LightCommand
 		{
 			using var session = ctx.OpenSession();
 			session.DisableLighting();
+			ProfileStore.PersistIfRequested(ctx, new KeyboardProfile
+			{
+				Theme = new KeyboardThemeBuilder().Base(0, 0, 0).Brightness(0).Build(),
+			});
 			ctx.Output.Emit(new { applied = true, lighting = "off" }, () => ctx.Output.Line("Lighting off."));
 			return ExitCode.Ok;
 		}));

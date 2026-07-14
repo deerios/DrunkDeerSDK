@@ -17,6 +17,8 @@ public sealed class GlobalOptions
 	public Option<int?> Timeout { get; } = new("--timeout") { Description = "HID receive timeout override, in milliseconds.", Recursive = true };
 	public Option<bool> Demo { get; } = new("--demo") { Description = "Use a simulated keyboard (no hardware required).", Recursive = true };
 	public Option<string?> DemoModel { get; } = new("--demo-model") { Description = "Model slug to simulate in --demo mode (default: a75_ultra).", Recursive = true };
+	public Option<string?> Persist { get; } = new("--persist") { Description = "Save applied settings into a named profile (see 'profile save'), merging with any existing profile of that name.", Recursive = true };
+	public Option<string?> LoadProfile { get; } = new("--load-profile") { Description = "Apply a saved profile (see 'profile save') before running the command.", Recursive = true };
 
 	public void AddTo(RootCommand root)
 	{
@@ -29,6 +31,8 @@ public sealed class GlobalOptions
 		root.Options.Add(Timeout);
 		root.Options.Add(Demo);
 		root.Options.Add(DemoModel);
+		root.Options.Add(Persist);
+		root.Options.Add(LoadProfile);
 	}
 
 	public CliContext BuildContext(ParseResult parse)
@@ -43,6 +47,8 @@ public sealed class GlobalOptions
 			TimeoutMs = parse.GetValue(Timeout),
 			Demo = parse.GetValue(Demo),
 			DemoModel = parse.GetValue(DemoModel),
+			Persist = parse.GetValue(Persist),
+			LoadProfile = parse.GetValue(LoadProfile),
 		};
 
 		bool noColor = Environment.GetEnvironmentVariable("NO_COLOR") is not null;

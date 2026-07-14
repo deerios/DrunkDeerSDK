@@ -14,6 +14,8 @@ public sealed class CliOptions
 	public int? TimeoutMs { get; init; }
 	public bool Demo { get; init; }
 	public string? DemoModel { get; init; }
+	public string? Persist { get; init; }
+	public string? LoadProfile { get; init; }
 }
 
 /// <summary>
@@ -43,8 +45,31 @@ public sealed class CliContext : IDisposable
 		LoggerFactory = loggerFactory;
 	}
 
-	/// <summary>Opens a session (real hardware, demo, or injected). Throws <see cref="CliException"/> on failure.</summary>
-	public KeyboardSession OpenSession() => SessionFactory.Open(this);
+	/// <summary>
+	/// Opens a session (real hardware, demo, or injected). Throws <see cref="CliException"/> on failure.
+	/// When <c>--load-profile</c> was given, applies that saved profile to the freshly opened session
+	/// before returning it, so every command run with the option starts from that known state.
+	/// </summary>
+	public KeyboardSession OpenSession()
+	{
+		var session = SessionFactory.Open(this);
+		if (string.IsNullOrWhiteSpace(Options.LoadProfile))
+			return session;
+
+		try
+		{
+			var profile = ProfileStore.LoadNamed(Options.LoadProfile);
+			Confirm.Require($"Load profile '{Options.LoadProfile}' before running this command");
+			session.ApplyProfile(profile);
+			Output.Note($"Loaded profile '{Options.LoadProfile}'.");
+			return session;
+		}
+		catch
+		{
+			session.Dispose();
+			throw;
+		}
+	}
 
 	public void Dispose() => LoggerFactory?.Dispose();
 }

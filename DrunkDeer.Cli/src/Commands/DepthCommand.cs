@@ -79,6 +79,7 @@ public static class DepthCommand
 		{
 			ctx.Confirm.Require($"Set {name} to {depth:0.###} mm on all keys");
 			setUniform(session, depth);
+			ProfileStore.PersistIfRequested(ctx, ProfileFor(name, new KeyDepthProfileBuilder().Default(depth).Build()));
 			return Report(ctx, name, depth, keys: null, allOthers: null);
 		}
 
@@ -102,10 +103,19 @@ public static class DepthCommand
 		ValidateDepth(session, allOthers.Value, name);
 		ctx.Confirm.Require($"Set {name}: {present.Length} key(s) to {depth:0.###} mm, all others to {allOthers.Value:0.###} mm");
 
-		var builder = new KeyDepthProfileBuilder().Default(allOthers.Value).Keys(present, depth);
-		setProfile(session, builder.Build());
+		var depthProfile = new KeyDepthProfileBuilder().Default(allOthers.Value).Keys(present, depth).Build();
+		setProfile(session, depthProfile);
+		ProfileStore.PersistIfRequested(ctx, ProfileFor(name, depthProfile));
 		return Report(ctx, name, depth, present, allOthers);
 	}
+
+	private static KeyboardProfile ProfileFor(string name, KeyDepthProfile depthProfile) => name switch
+	{
+		"actuation"  => new KeyboardProfile { Actuation = depthProfile },
+		"downstroke" => new KeyboardProfile { Downstroke = depthProfile },
+		"upstroke"   => new KeyboardProfile { Upstroke = depthProfile },
+		_ => new KeyboardProfile(),
+	};
 
 	private static void ValidateDepth(KeyboardSession session, float mm, string name)
 	{
