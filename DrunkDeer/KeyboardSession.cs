@@ -1406,6 +1406,36 @@ public class KeyboardSession : IDisposable
 		return result;
 	}
 
+	/// <summary>
+	/// Returns the current in-memory RGB colour for <paramref name="key"/>. Like
+	/// <see cref="GetCurrentColors"/>, this is the last colour this session sent for the key
+	/// (or black if none was set), not a read-back of what the keyboard currently displays.
+	/// </summary>
+	public (byte R, byte G, byte B) GetKeyColor(DDKey key) => _rgbProfile[GetKeyIndex(key)];
+
+	/// <summary>
+	/// Returns this session's in-memory actuation-depth profile in millimetres, keyed by
+	/// <see cref="DDKey"/>. These are the depths this session last wrote (or the 2.0 mm defaults
+	/// it seeded at connect time), which is only guaranteed to match the hardware on
+	/// HighPrecision models that support read-back - see the per-key write note on
+	/// <see cref="SetActuationPoint(float, DDKey[])"/>.
+	/// </summary>
+	public IReadOnlyDictionary<DDKey, float> GetActuationProfile() => ToKeyDictionary(_actuationProfile);
+
+	/// <summary>
+	/// Returns this session's in-memory downstroke (rapid-trigger press) profile in millimetres,
+	/// keyed by <see cref="DDKey"/>. Same "last written / seeded" caveat as
+	/// <see cref="GetActuationProfile"/>.
+	/// </summary>
+	public IReadOnlyDictionary<DDKey, float> GetDownstrokeProfile() => ToKeyDictionary(_downstrokeProfile);
+
+	/// <summary>
+	/// Returns this session's in-memory upstroke (rapid-trigger release) profile in millimetres,
+	/// keyed by <see cref="DDKey"/>. Same "last written / seeded" caveat as
+	/// <see cref="GetActuationProfile"/>.
+	/// </summary>
+	public IReadOnlyDictionary<DDKey, float> GetUpstrokeProfile() => ToKeyDictionary(_upstrokeProfile);
+
 	// Per-key stored color flash block - sub-cmd 0x0A (read) / 0x0B (write).
 	// 512 bytes per profile at address 512 × profileIndex. First 384 bytes = 128 keys × 3 RGB.
 	// Distinct from the live 0xAE push: this is the flash map used when effect = 0 (custom mode).
