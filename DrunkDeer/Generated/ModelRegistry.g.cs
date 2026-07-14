@@ -128,7 +128,7 @@ public static class ModelRegistry
         {
             Slug             = ModelSlugs.A75,
             Name             = "A75",
-            Capabilities     = Capabilities.None,
+            Capabilities     = Capabilities.TurboMode,
             MinDepthMm       = 0.2f,
             MaxDepthMm       = 3.3f,
             KunPrecisionMinFirmware = (byte)35,
@@ -138,7 +138,7 @@ public static class ModelRegistry
         {
             Slug             = ModelSlugs.A75Pro,
             Name             = "A75 Pro",
-            Capabilities     = Capabilities.None,
+            Capabilities     = Capabilities.TurboMode,
             MinDepthMm       = 0.2f,
             MaxDepthMm       = 3.3f,
             KunPrecisionMinFirmware = (byte)17,
@@ -298,13 +298,13 @@ public interface IModelMarker
 // Compile-time phantom types used as the TModel type argument of
 // KeyboardSession<TModel>. Each class implements only the capability interfaces
 // its hardware actually supports, so intellisense gates methods accordingly.
-/// <summary>Model marker type for A75.</summary>
-public sealed class A75 : IModelMarker
+/// <summary>Model marker type for A75. Implements: IHasTurboMode.</summary>
+public sealed class A75 : IModelMarker, IHasTurboMode
 {
     public static string Slug => ModelSlugs.A75;
 }
-/// <summary>Model marker type for A75 Pro.</summary>
-public sealed class A75Pro : IModelMarker
+/// <summary>Model marker type for A75 Pro. Implements: IHasTurboMode.</summary>
+public sealed class A75Pro : IModelMarker, IHasTurboMode
 {
     public static string Slug => ModelSlugs.A75Pro;
 }

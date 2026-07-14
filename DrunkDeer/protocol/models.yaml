@@ -24,7 +24,7 @@ models:
   # Identity (11,1,1) is an alternate PID observed for the same ANSI hardware.
   a75:
     name: A75
-    capabilities: []
+    capabilities: [turbo_mode]
     firmware_overrides:
       min_depth_mm: 0.2
       max_depth_mm: 3.3
@@ -42,7 +42,7 @@ models:
   # Standard-precision model by default. Acquires kun_precision at firmware >= 17 (beta).
   a75_pro:
     name: A75 Pro
-    capabilities: []
+    capabilities: [turbo_mode]
     firmware_overrides:
       min_depth_mm: 0.2
       max_depth_mm: 3.3

@@ -491,6 +491,16 @@ public class KeyboardSession : IDisposable
 	public static KeyboardSession OpenFirst(ILoggerFactory? loggerFactory = null) =>
 		new(KeyboardDiscoverer.OpenFirst(loggerFactory), loggerFactory);
 
+	/// <summary>
+	/// Builds a session over a caller-supplied connection. Use this to drive the
+	/// session from a simulator (<see cref="Simulation.SimulatedKeyboardConnection"/>)
+	/// or any other <see cref="IKeyboardConnection"/> when you already own the transport
+	/// (demo mode, tests, non-discovery openers). The session takes ownership: disposing
+	/// it disposes the connection.
+	/// </summary>
+	public static KeyboardSession Open(IKeyboardConnection connection, ILoggerFactory? loggerFactory = null) =>
+		new(connection, loggerFactory);
+
 	/// <summary>Starts the background poll loop. Calling while already polling is a no-op.</summary>
 	public void StartPolling(CancellationToken cancellationToken = default)
 	{
@@ -1735,7 +1745,7 @@ public class KeyboardSession : IDisposable
 	{
 		EnsureNotPolling();
 		SendCommonConfig(true, _rapidTriggerEnabled, _lastWinRtMode, _rapidTriggerAutoMatch);
-		if (HasTurboMode) { var b = FetchFuncBlock(); b.TurboMode = true;  PushFuncBlock(b); }
+		if (HasFuncBlock) { var b = FetchFuncBlock(); b.TurboMode = true;  PushFuncBlock(b); }
 	}
 
 	/// <summary>Disables Turbo mode globally.</summary>
@@ -1743,7 +1753,7 @@ public class KeyboardSession : IDisposable
 	{
 		EnsureNotPolling();
 		SendCommonConfig(false, _rapidTriggerEnabled, _lastWinRtMode, _rapidTriggerAutoMatch);
-		if (HasTurboMode) { var b = FetchFuncBlock(); b.TurboMode = false; PushFuncBlock(b); }
+		if (HasFuncBlock) { var b = FetchFuncBlock(); b.TurboMode = false; PushFuncBlock(b); }
 	}
 
 	/// <summary>
