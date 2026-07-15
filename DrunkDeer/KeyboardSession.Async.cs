@@ -95,6 +95,12 @@ public partial class KeyboardSession
 		// Mirror StartPolling: a loop that exited on its own (disconnect) left its CTS behind.
 		_pollCts?.Dispose();
 		_pollCts  = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+		// Claimed here rather than inside the loop, which cannot set it until after its first
+		// await: until this is true, EnsureNotSyncPolling sees a running _pollTask with no async
+		// loop behind it and mistakes this for a sync one. A caller that issues a config command
+		// straight after awaiting this method would get that error, on a session polling async.
+		// PollLoopAsync's finally clears it however the loop ends.
+		_asyncPollActive = true;
 		_pollTask = PollLoopAsync(_pollCts.Token);
 		return Task.CompletedTask;
 	}
@@ -152,7 +158,6 @@ public partial class KeyboardSession
 	private async Task PollLoopAsync(CancellationToken ct)
 	{
 		await Task.Yield(); // return to the caller before touching the wire
-		_asyncPollActive = true;
 		var conn = AsyncConnectionOrThrow;
 		_log.LogInformation("PollLoopAsync started (HasDataStream={DS}, PrecisionMode={PM}).",
 			conn.HasDataStream, _precisionMode);

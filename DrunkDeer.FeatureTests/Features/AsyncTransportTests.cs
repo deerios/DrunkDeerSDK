@@ -129,6 +129,74 @@ public class AsyncTransportTests
 	}
 
 	[Test]
+	public async Task ConfigCommand_RunsImmediatelyAfterStartPollingAsync()
+	{
+		// The async loop cannot flag itself as running until after its first await, so there is a
+		// window where the session holds a live poll task with no async loop behind it yet — which
+		// EnsureNotSyncPolling reads as a *synchronous* loop and rejects, naming the wrong poll loop
+		// entirely. Anything that starts polling and configures the board in the same breath hits it.
+		//
+		// The window only stays open where that continuation can't run: on the thread pool it
+		// usually wins the race and hides the bug, so this pins the browser's single thread, where
+		// nothing runs until the current call stack yields.
+		var original = SynchronizationContext.Current;
+		var ctx = new QueueingSyncContext();
+		SynchronizationContext.SetSynchronizationContext(ctx);
+
+		var sim = new SimulatedKeyboardConnection();
+		var session = KeyboardSession.OpenAsyncConnection(sim);
+		try
+		{
+			// Completes synchronously and leaves the loop's first continuation queued — precisely
+			// the state the browser is in the instant after connecting.
+			_ = session.StartPollingAsync();
+
+			// Faults before its first await if the check rejects it, so the returned task already
+			// carries the verdict; awaiting it would need the context to pump.
+			var command = session.SetActuationPointAsync(1.5f, [DDKey.W]);
+
+			Assert.That(command.IsFaulted, Is.False,
+				$"A config command issued straight after StartPollingAsync was rejected: {command.Exception?.InnerException?.Message}");
+		}
+		finally
+		{
+			// Restore first so the poll loop's own continuations go to the pool, not back into the
+			// queue, once it is finally allowed to start.
+			SynchronizationContext.SetSynchronizationContext(original);
+			ctx.Drain();
+			await session.DisposeAsync();
+		}
+	}
+
+	/// <summary>
+	/// Queues continuations instead of running them, standing in for the browser's single thread:
+	/// nothing posted here runs until <see cref="Drain"/> pumps it.
+	/// </summary>
+	private sealed class QueueingSyncContext : SynchronizationContext
+	{
+		private readonly Queue<(SendOrPostCallback Callback, object? State)> _queued = new();
+
+		public override void Post(SendOrPostCallback d, object? state)
+		{
+			lock (_queued) _queued.Enqueue((d, state));
+		}
+
+		public void Drain()
+		{
+			while (true)
+			{
+				(SendOrPostCallback Callback, object? State) next;
+				lock (_queued)
+				{
+					if (_queued.Count == 0) return;
+					next = _queued.Dequeue();
+				}
+				next.Callback(next.State);
+			}
+		}
+	}
+
+	[Test]
 	public async Task SimulatedConnection_PacesAsyncFrames()
 	{
 		// Without pacing the async poll loop spins flat-out (the simulator stages a frame on every
