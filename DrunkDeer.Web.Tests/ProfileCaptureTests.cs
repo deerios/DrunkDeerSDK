@@ -2,7 +2,6 @@ using DrunkDeer;
 using DrunkDeer.Protocol;
 using DrunkDeer.Web.Services;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.JSInterop;
 using NUnit.Framework;
 
 namespace DrunkDeer.Web.Tests;
@@ -347,15 +346,5 @@ public class ProfileCaptureTests
 		});
 
 		Assert.That(_service.SensitivityIsKnown, Is.False);
-	}
-
-	/// <summary>Stands in for the browser. Capture and apply never reach JS, so nothing should call this.</summary>
-	private sealed class StubJsRuntime : IJSRuntime
-	{
-		public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) =>
-			throw new NotSupportedException($"The test reached JS: {identifier}");
-
-		public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken ct, object?[]? args) =>
-			throw new NotSupportedException($"The test reached JS: {identifier}");
 	}
 }
