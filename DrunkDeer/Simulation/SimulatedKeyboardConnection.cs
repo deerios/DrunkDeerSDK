@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using DrunkDeer.Protocol;
 
 namespace DrunkDeer.Simulation;
@@ -57,6 +58,20 @@ public sealed class SimulatedKeyboardConnection : IKeyboardConnection, IKeyboard
 	/// so a demo display looks alive at rest. Off by default so tests stay deterministic.
 	/// </summary>
 	public bool IdleJitter { get; set; }
+
+	/// <summary>
+	/// Minimum wall-clock spacing between synthesised travel frames on the <em>async</em> transport.
+	/// A real keyboard's blocking read paces the poll loop at the device's report rate; the simulator
+	/// stages frames instantly, so without this the async poll loop would spin flat-out and peg a core
+	/// (fatal on the single-threaded WASM UI, where it starves rendering). Defaults to ~8&#160;ms
+	/// (~125&#160;Hz) — comfortably above a 60&#160;fps display. Set to <see cref="TimeSpan.Zero"/> to
+	/// disable pacing. Does not affect the synchronous <see cref="Send"/>/<see cref="ReceiveCommand"/>
+	/// path, which stays instant for deterministic tests.
+	/// </summary>
+	public TimeSpan FrameInterval { get; set; } = TimeSpan.FromMilliseconds(8);
+
+	// Timestamp of the last async-staged frame; 0 until the first frame. Used to pace the async loop.
+	private long _lastFrameStamp;
 
 	/// <param name="model">Model to advertise; defaults to the A75.</param>
 	/// <param name="firmwareVersion">Firmware version to advertise (affects Kun-precision upgrade).</param>
@@ -141,11 +156,33 @@ public sealed class SimulatedKeyboardConnection : IKeyboardConnection, IKeyboard
 	// on an empty queue waits out the timeout honouring cancellation, matching a real
 	// keyboard's blocking read so the async poll loop paces itself the same way.
 
-	public ValueTask SendAsync(byte[] packet, CancellationToken cancellationToken = default)
+	public async ValueTask SendAsync(byte[] packet, CancellationToken cancellationToken = default)
 	{
 		cancellationToken.ThrowIfCancellationRequested();
-		Send(packet);
-		return ValueTask.CompletedTask;
+		// Only the travel request stages a frame; pace it so the async poll loop runs at a realistic
+		// rate instead of spinning. Non-travel fire-and-forget sends are accepted with no work (Send's
+		// behaviour), so there's nothing to do for them.
+		if (IsTravelRequest(packet))
+		{
+			await PaceFrameAsync(cancellationToken).ConfigureAwait(false);
+			StageFrame();
+		}
+	}
+
+	// Delay until at least FrameInterval has elapsed since the previous async-staged frame, so the
+	// caller's poll loop is paced like a real device's blocking read rather than looping flat-out.
+	private async ValueTask PaceFrameAsync(CancellationToken cancellationToken)
+	{
+		var interval = FrameInterval;
+		if (interval <= TimeSpan.Zero)
+			return;
+		if (_lastFrameStamp != 0)
+		{
+			var remaining = interval - Stopwatch.GetElapsedTime(_lastFrameStamp);
+			if (remaining > TimeSpan.Zero)
+				await Task.Delay(remaining, cancellationToken).ConfigureAwait(false);
+		}
+		_lastFrameStamp = Stopwatch.GetTimestamp();
 	}
 
 	public ValueTask<byte[]?> SendAndReceiveAsync(byte[] packet, int timeoutMs = 1000, CancellationToken cancellationToken = default)

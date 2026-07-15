@@ -129,6 +129,41 @@ public class AsyncTransportTests
 	}
 
 	[Test]
+	public async Task SimulatedConnection_PacesAsyncFrames()
+	{
+		// Without pacing the async poll loop spins flat-out (the simulator stages a frame on every
+		// travel request and returns it instantly), pegging a core — fatal on the single-threaded
+		// WASM UI. SendAsync must hold each travel request for at least FrameInterval since the last.
+		var sim = new SimulatedKeyboardConnection { FrameInterval = TimeSpan.FromMilliseconds(50) };
+		var request = TravelRequest.Build();
+
+		var start = DateTime.UtcNow;
+		for (int i = 0; i < 4; i++) // first send is immediate; the next 3 each wait ~one interval
+			await sim.SendAsync(request);
+		var elapsed = DateTime.UtcNow - start;
+
+		// 3 paced gaps of 50 ms ≈ 150 ms; allow slack for timer coarseness but require real pacing.
+		Assert.That(elapsed, Is.GreaterThan(TimeSpan.FromMilliseconds(120)),
+			"Travel requests were not paced — the async poll loop would spin.");
+	}
+
+	[Test]
+	public async Task SimulatedConnection_ZeroFrameInterval_DisablesPacing()
+	{
+		// Opt-out for tests that want the old instant behaviour on the async surface.
+		var sim = new SimulatedKeyboardConnection { FrameInterval = TimeSpan.Zero };
+		var request = TravelRequest.Build();
+
+		var start = DateTime.UtcNow;
+		for (int i = 0; i < 50; i++)
+			await sim.SendAsync(request);
+		var elapsed = DateTime.UtcNow - start;
+
+		Assert.That(elapsed, Is.LessThan(TimeSpan.FromMilliseconds(200)),
+			"Zero FrameInterval should not pace at all.");
+	}
+
+	[Test]
 	public async Task AsyncOnlySession_RejectsBlockingApi()
 	{
 		// A session opened over an async-only connection (the WebHID case) must steer callers to
