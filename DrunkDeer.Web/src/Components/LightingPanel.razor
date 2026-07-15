@@ -1,0 +1,243 @@
+@using MudBlazor.Utilities
+@using DrunkDeer.Protocol
+@inject KeyboardService Keyboard
+@inject KeyboardStore Store
+@inject SelectionStore Selection
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@implements IDisposable
+
+@* The lighting side panel (FUTURE_PLAN §5.4): colours whatever is selected on the on-screen
+   keyboard, and drives the board's built-in animations. See KeyboardService.ApplyLightingAsync
+   for why the background for unselected keys is asked for up front rather than assumed. *@
+
+<MudPaper Class="pa-4" Elevation="1">
+    <MudText Typo="Typo.h6" Class="mb-1">Lighting</MudText>
+    <MudText Typo="Typo.caption" Color="Color.Secondary">
+        Per-key colours, or one of the board's own animations.
+    </MudText>
+
+    <MudDivider Class="my-3" />
+
+    @if (Keyboard.ActiveMode is { } running)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            <b>@Humanize(running)</b> is running. The board generates it itself, so the colours below
+            aren't what's on the keyboard right now — applying one switches back to per-key colours.
+        </MudAlert>
+    }
+    else if (Keyboard.BacklightOff)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+            The backlight is off. Applying a colour turns it back on.
+        </MudAlert>
+    }
+
+    @if (Selection.IsEmpty)
+    {
+        <MudText Typo="Typo.body2" Color="Color.Secondary">
+            Select keys on the keyboard to colour them.
+        </MudText>
+    }
+    else
+    {
+        <MudText Typo="Typo.body2" Class="mb-2">
+            <b>@Selection.Count</b> @Noun(Selection.Count) selected
+        </MudText>
+
+        <MudColorPicker @bind-Value="_color" Label="Key colour" Placeholder="Pick a colour"
+                        Variant="Variant.Outlined" Margin="Margin.Dense"
+                        Disabled="@_busy" Class="mb-2" />
+
+        @if (!Keyboard.ColorsAreKnown)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+                This board can't report its current colours, and the firmware only accepts
+                whole-board writes — so applying also colours every key you didn't select.
+            </MudAlert>
+            <MudColorPicker @bind-Value="_background" Label="All other keys"
+                            Variant="Variant.Outlined" Margin="Margin.Dense"
+                            Disabled="@_busy" Class="mt-3" />
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-3">
+                Background brightness: @_backgroundBrightness
+            </MudText>
+            <MudSlider T="int" @bind-Value="_backgroundBrightness" Min="0" Max="9" Step="1"
+                       Immediate="true" Disabled="@_busy" />
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block">
+                Dims the background only, so it sits under the keys you picked. The keyboard has one
+                brightness for the whole board, so this is applied to the colour itself.
+            </MudText>
+        }
+        else
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-2">
+                Keys you haven't selected keep the colours this session last wrote.
+            </MudText>
+        }
+
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-3">
+            Brightness: @_brightness
+        </MudText>
+        <MudSlider T="int" @bind-Value="_brightness" Min="0" Max="9" Step="1"
+                   Immediate="true" Disabled="@_busy" />
+
+        <MudButton Class="mt-2" FullWidth="true" Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Palette" Disabled="@_busy" OnClick="ApplyAsync">
+            @(_busy ? "Applying…" : "Apply to keyboard")
+        </MudButton>
+    }
+
+    <MudDivider Class="my-4" />
+
+    <MudText Typo="Typo.subtitle2" Class="mb-2">Animation</MudText>
+    <MudSelect T="LightingMode?" Value="@Keyboard.ActiveMode" ValueChanged="StartModeAsync"
+               Label="Effect" Variant="Variant.Outlined" Margin="Margin.Dense"
+               Disabled="@_busy" Clearable="false">
+        @foreach (var mode in Modes)
+        {
+            <MudSelectItem T="LightingMode?" Value="@mode">@Humanize(mode!.Value)</MudSelectItem>
+        }
+    </MudSelect>
+
+    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-3">
+        Speed: @_speed
+    </MudText>
+    <MudSlider T="int" @bind-Value="_speed" Min="0" Max="9" Step="1" Immediate="true" Disabled="@_busy" />
+
+    <MudButton Class="mt-2" FullWidth="true" Variant="Variant.Outlined"
+               StartIcon="@Icons.Material.Outlined.Lightbulb"
+               Disabled="@(_busy || Keyboard.BacklightOff)" OnClick="TurnOffAsync">
+        Turn backlight off
+    </MudButton>
+</MudPaper>
+
+@code {
+    // Every animation the firmware exposes. LightingMode has no "custom" member: per-key colour
+    // writes are what select the custom mode, so returning to it means applying a colour.
+    private static readonly LightingMode?[] Modes =
+        [.. Enum.GetValues<LightingMode>().Select(m => (LightingMode?)m)];
+
+    private MudColor _color = new("#ff5722");
+    // A saturated background rather than a near-black one: the brightness below scales it down
+    // linearly, so starting dark would land the first write on "everything else went off" — the
+    // very impression the explicit background exists to avoid.
+    private MudColor _background = new("#3060c0");
+    private int _backgroundBrightness = 4;
+    private int _brightness = 9;
+    private int _speed = 5;
+    private bool _busy;
+
+    protected override void OnInitialized() => Selection.Changed += OnSelectionChanged;
+
+    private async Task ApplyAsync()
+    {
+        var keys = SelectedKeys();
+        if (keys.Length == 0) return;
+
+        // Only the first write of a session needs confirming: it is the one that colours keys the
+        // user never touched. After that the panel leaves them alone.
+        if (!Keyboard.ColorsAreKnown && !await ConfirmFirstWriteAsync(keys.Length))
+            return;
+
+        _busy = true;
+        try
+        {
+            await Keyboard.ApplyLightingAsync(
+                ToRgb(_color), keys, ToRgb(_background),
+                (byte)_backgroundBrightness, (byte)_brightness);
+            Snackbar.Add($"Coloured {keys.Length} {Noun(keys.Length)}.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't apply lighting: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task<bool> ConfirmFirstWriteAsync(int selected)
+    {
+        int others = Math.Max(0, (Keyboard.Session?.Layout.Count ?? 0) - selected);
+        var body = Store.IsDemo
+            ? $"Colours {selected} selected {Noun(selected)} and sets the other {others} to the background. "
+              + "This is a simulated keyboard, so no hardware is touched."
+            : $"Colours {selected} selected {Noun(selected)} and sets the other {others} to the background. "
+              + "This board's existing colours can't be read back, so any lighting configured elsewhere "
+              + "(for example in the official app) will be overwritten.";
+
+        var result = await Dialogs.ShowMessageBoxAsync(
+            title: "Light the whole keyboard?",
+            markupMessage: new MarkupString(body),
+            yesText: "Apply", cancelText: "Cancel");
+        return result == true;
+    }
+
+    private async Task StartModeAsync(LightingMode? mode)
+    {
+        if (mode is null) return;
+        _busy = true;
+        try
+        {
+            await Keyboard.SetLightingModeAsync(mode.Value, (byte)_brightness, (byte)_speed);
+            Snackbar.Add($"{Humanize(mode.Value)} started.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't start the animation: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task TurnOffAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Keyboard.TurnLightingOffAsync();
+            Snackbar.Add("Backlight off.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Couldn't turn the backlight off: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // The selection is held as firmware slots; the SDK's lighting API speaks DDKey, and the
+    // layout is what maps between them.
+    private DDKey[] SelectedKeys()
+    {
+        var session = Keyboard.Session;
+        if (session is null) return [];
+        return [.. session.Layout.Where(k => Selection.Contains(k.SlotIndex)).Select(k => k.Key)];
+    }
+
+    private static RgbColor ToRgb(MudColor c) => new(c.R, c.G, c.B);
+
+    /// <summary>Turns an enum name like <c>WaveSpectrum</c> into "Wave spectrum".</summary>
+    private static string Humanize(LightingMode mode)
+    {
+        var name = mode.ToString();
+        var sb = new System.Text.StringBuilder(name.Length + 4);
+        for (int i = 0; i < name.Length; i++)
+        {
+            if (i > 0 && char.IsUpper(name[i])) sb.Append(' ').Append(char.ToLowerInvariant(name[i]));
+            else sb.Append(name[i]);
+        }
+        return sb.ToString();
+    }
+
+    private static string Noun(int n) => n == 1 ? "key" : "keys";
+
+    private void OnSelectionChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Selection.Changed -= OnSelectionChanged;
+}

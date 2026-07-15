@@ -1,0 +1,289 @@
+@using System.Globalization
+@using DrunkDeer.Protocol
+@inject KeyboardService Keyboard
+@inject SelectionStore Selection
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@* The on-screen keyboard (FUTURE_PLAN §5.4). Structure renders once from session.Layout;
+   the per-frame travel animation lives entirely in keyboard.js patching CSS variables,
+   so Blazor never re-renders the keys at poll rate.
+
+   The keys' class attribute is deliberately left to JS after the first render: the rAF loop
+   toggles .pressed there, and re-rendering the attribute from Blazor would wipe it. Selection
+   travels out to JS through setSelection instead of via the render tree, for the same reason. *@
+
+@if (_layout.Count == 0)
+{
+    <MudAlert Severity="Severity.Warning" Dense="true">
+        No on-screen layout is available for this model yet.
+    </MudAlert>
+}
+else
+{
+    <div class="board" @ref="_board"
+         style="--cols:@F(_cols); --rows:@F(_rows)">
+        @* Rendered here rather than created in JS so that scoped CSS actually reaches it —
+           isolation only rewrites selectors for elements Blazor itself stamps. *@
+        <div class="marquee" hidden></div>
+        @foreach (var k in _layout)
+        {
+            var p = Paint(k);
+            var a = Act(k);
+            <div class="key @(k.Secondary is not null ? "key-l" : "")"
+                 data-slot="@k.SlotIndex"
+                 role="button" tabindex="0" aria-pressed="false" aria-label="@k.Legend"
+                 style="--kx:@F(k.X); --ky:@F(k.Y); --kw:@F(k.W); --kh:@F(k.H); --kc:@p.Kc; --lc:@p.Lc; --lit:@p.Lit; --act:@a.Act; --actc:var(--act-@a.State)">
+                <div class="glow"></div>
+                <div class="cap">
+                    <span class="legend">@k.Legend</span>
+                    <div class="depth-bar"><div class="depth-fill"></div></div>
+                </div>
+                @if (k.Secondary is { } s)
+                {
+                    @* Extra leg of a non-rectangular cap (e.g. ISO Enter) — a second face
+                       positioned relative to the key origin. *@
+                    <div class="cap cap2"
+                         style="--sx:@F(s.X - k.X); --sy:@F(s.Y - k.Y); --sw:@F(s.W); --sh:@F(s.H)"></div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    // The legend colour used when there is no backlight to represent.
+    private const string Neutral = "#cfcfd4";
+
+    // How light a legend has to be to read on the #1c1d22 cap. See Readable.
+    private const float MinLegendLightness = 0.62f;
+
+    private ElementReference _board;
+    private IReadOnlyList<KeyInfo> _layout = [];
+    private float _cols, _rows, _maxDepth = 4f;
+
+    // Cached because Act() runs per key and the session rebuilds this dictionary on every call.
+    private IReadOnlyDictionary<DDKey, float> _actuation = new Dictionary<DDKey, float>();
+
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<KeyboardView>? _selfRef;
+
+    protected override void OnInitialized()
+    {
+        Selection.Changed += OnSelectionChanged;
+        Keyboard.LightingChanged += OnLightingChanged;
+        Keyboard.ActuationChanged += OnActuationChanged;
+
+        var session = Keyboard.Session;
+        if (session is null) return;
+        _layout = session.Layout;
+        _cols = session.BoardWidth;
+        _rows = session.BoardHeight;
+        if (session.MaxDepthMm > 0) _maxDepth = session.MaxDepthMm;
+        _actuation = Keyboard.GetActuationProfile();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _layout.Count == 0) return;
+
+        var session = Keyboard.Session;
+        if (session is null) return;
+
+        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/keyboard.js");
+        _selfRef = DotNetObjectReference.Create(this);
+        await _module.InvokeVoidAsync("attach", _board, _selfRef, _maxDepth, session.PressThresholdMm);
+
+        // The selection can outlive a navigation away and back, so paint whatever is already
+        // in the store rather than assuming a fresh board is unselected.
+        if (!Selection.IsEmpty) await PushSelectionAsync();
+    }
+
+    // Called synchronously by the rAF loop each frame. Reads the live travel snapshot off
+    // the session without going through Blazor — the deliberate hot-path bypass.
+    [JSInvokable]
+    public float[] SampleHeights() => Keyboard.SnapshotHeights();
+
+    /// <summary>Reports a pointer/keyboard gesture from the board; the store decides what it means.</summary>
+    /// <remarks>
+    /// The mode crosses as a string: Blazor's interop serializer has no string-enum converter,
+    /// so an enum parameter would only bind to a bare number. Qualified because MudBlazor has a
+    /// <c>SelectionMode</c> of its own and both namespaces are imported globally.
+    /// </remarks>
+    [JSInvokable]
+    public void SelectSlots(int[] slots, string mode)
+    {
+        if (!Enum.TryParse<Services.SelectionMode>(mode, out var parsed))
+            parsed = Services.SelectionMode.Replace;
+        Selection.Apply(parsed, slots);
+    }
+
+    private void OnSelectionChanged() => _ = InvokeAsync(async () =>
+    {
+        await PushSelectionAsync();
+        // A preview only applies to the selected keys, so changing the selection moves it.
+        if (Keyboard.ActuationPreviewMm is not null) await PushActuationAsync();
+    });
+
+    private async Task PushSelectionAsync()
+    {
+        if (_module is null) return;
+        try
+        {
+            await _module.InvokeVoidAsync("setSelection", _board, Selection.Slots);
+        }
+        catch (JSDisconnectedException) { /* teardown raced the update */ }
+        catch (ObjectDisposedException) { /* same */ }
+    }
+
+    /// <summary>Where one key's actuation marker sits, and how much the board should trust it.</summary>
+    /// <remarks>
+    /// Three states, because the marker means three different things. A board that has been written
+    /// this session reports what it is set to ("set"). A key whose depth the user is dialling in
+    /// shows where it is heading ("preview"). Otherwise the position is the SDK's assumed default
+    /// rather than anything the board said — the A75 cannot report its settings back — so the marker
+    /// is drawn faintly ("unknown") instead of claiming to know.
+    /// </remarks>
+    private KeyAct Act(KeyInfo k)
+    {
+        if (Keyboard.ActuationPreviewMm is { } preview && Selection.Contains(k.SlotIndex))
+            return new(k.SlotIndex, Frac(preview), "preview");
+
+        var mm = _actuation.TryGetValue(k.Key, out var v) ? v : 0f;
+        return new(k.SlotIndex, Frac(mm), Keyboard.DepthsAreKnown ? "set" : "unknown");
+    }
+
+    private string Frac(float mm) => F(Math.Clamp(mm / _maxDepth, 0f, 1f));
+
+    private void OnActuationChanged() => _ = InvokeAsync(async () =>
+    {
+        _actuation = Keyboard.GetActuationProfile();
+        await PushActuationAsync();
+    });
+
+    private async Task PushActuationAsync()
+    {
+        if (_module is null) return;
+        try
+        {
+            await _module.InvokeVoidAsync("setActuation", _board, _layout.Select(Act));
+        }
+        catch (JSDisconnectedException) { /* teardown raced the update */ }
+        catch (ObjectDisposedException) { /* same */ }
+    }
+
+    /// <summary>How one key should be painted: backlight colour, legend colour, and whether it is lit.</summary>
+    /// <remarks>
+    /// The backlight colour and the legend colour are not the same thing: the legend has to stay
+    /// readable on a dark cap at any brightness, so it carries the key's hue rather than its exact
+    /// colour. See <see cref="Readable"/>. The glow keeps the true colour, so brightness still
+    /// shows in the picture.
+    /// </remarks>
+    private KeyPaint Paint(KeyInfo k)
+    {
+        var session = Keyboard.Session;
+        if (session is null) return new(k.SlotIndex, "transparent", Neutral, 0);
+
+        // A running animation is generated on the board itself, and the backlight can be off
+        // outright; in neither case do this session's per-key colours describe what's displayed,
+        // so show the board unlit rather than inventing a picture of it.
+        if (Keyboard.ActiveMode is not null || Keyboard.BacklightOff)
+            return new(k.SlotIndex, "transparent", Neutral, 0);
+
+        var (r, g, b) = session.GetKeyColor(k.Key);
+        if (r == 0 && g == 0 && b == 0) return new(k.SlotIndex, "transparent", Neutral, 0);
+
+        return new(k.SlotIndex, $"rgb({r},{g},{b})", Readable(r, g, b), 1);
+    }
+
+    /// <summary>The key's colour, lifted to something legible on the dark cap without losing its hue.</summary>
+    /// <remarks>
+    /// The legend stands in for light coming through the cap, so it has to look like the colour the
+    /// user picked — but that colour is usually far too dark to read as text. Brightness scales
+    /// linearly, so a level-4 background is 44% of its nominal colour, and saturated blues are dim
+    /// even at full brightness. Judging "too dark" by luma and falling back to grey (as this used
+    /// to) throws the hue away exactly when the user is trying to choose one, and blue never passes
+    /// a luma test at any brightness. Raising the lightness and leaving hue and saturation alone
+    /// keeps the legend recognisably the chosen colour at every brightness.
+    /// </remarks>
+    private static string Readable(byte r, byte g, byte b)
+    {
+        float rf = r / 255f, gf = g / 255f, bf = b / 255f;
+        float max = Math.Max(rf, Math.Max(gf, bf));
+        float min = Math.Min(rf, Math.Min(gf, bf));
+        float l = (max + min) / 2f;
+        if (l >= MinLegendLightness) return $"rgb({r},{g},{b})";
+
+        float d = max - min;
+        if (d == 0) return HslToCss(0, 0, MinLegendLightness); // a grey; only its lightness matters
+
+        float s = d / (1 - Math.Abs(2 * l - 1));
+        float h;
+        if (max == rf) h = ((gf - bf) / d) % 6;
+        else if (max == gf) h = (bf - rf) / d + 2;
+        else h = (rf - gf) / d + 4;
+        h *= 60;
+        if (h < 0) h += 360;
+
+        return HslToCss(h, s, MinLegendLightness);
+    }
+
+    private static string HslToCss(float h, float s, float l)
+    {
+        float c = (1 - Math.Abs(2 * l - 1)) * s;
+        float x = c * (1 - Math.Abs(h / 60f % 2 - 1));
+        float m = l - c / 2;
+
+        // An if-chain rather than a switch expression on relational patterns: Razor parses a
+        // `< 60 =>` arm as the start of a markup tag and the file stops compiling.
+        float r, g, b;
+        int sector = (int)(h / 60f) % 6;
+        if (sector == 0) { r = c; g = x; b = 0; }
+        else if (sector == 1) { r = x; g = c; b = 0; }
+        else if (sector == 2) { r = 0; g = c; b = x; }
+        else if (sector == 3) { r = 0; g = x; b = c; }
+        else if (sector == 4) { r = x; g = 0; b = c; }
+        else { r = c; g = 0; b = x; }
+
+        static byte To(float v) => (byte)Math.Clamp(MathF.Round(v * 255), 0, 255);
+        return $"rgb({To(r + m)},{To(g + m)},{To(b + m)})";
+    }
+
+    private void OnLightingChanged() => _ = InvokeAsync(PushColorsAsync);
+
+    private async Task PushColorsAsync()
+    {
+        if (_module is null) return;
+        try
+        {
+            await _module.InvokeVoidAsync("setColors", _board, _layout.Select(Paint));
+        }
+        catch (JSDisconnectedException) { /* teardown raced the update */ }
+        catch (ObjectDisposedException) { /* same */ }
+    }
+
+    /// <summary>One key's paint, as keyboard.js expects it.</summary>
+    private readonly record struct KeyPaint(int Slot, string Kc, string Lc, int Lit);
+
+    /// <summary>One key's actuation marker: its position as a fraction of full travel, and its state.</summary>
+    private readonly record struct KeyAct(int Slot, string Act, string State);
+
+    private static string F(float v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+
+    public async ValueTask DisposeAsync()
+    {
+        Selection.Changed -= OnSelectionChanged;
+        Keyboard.LightingChanged -= OnLightingChanged;
+        Keyboard.ActuationChanged -= OnActuationChanged;
+        if (_module is not null)
+        {
+            try
+            {
+                await _module.InvokeVoidAsync("detach", _board);
+                await _module.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { /* circuit gone; nothing to clean up */ }
+        }
+        _selfRef?.Dispose();
+    }
+}

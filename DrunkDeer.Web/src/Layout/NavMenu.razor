@@ -1,0 +1,15 @@
+@inject KeyboardStore Store
+@implements IDisposable
+
+<MudNavMenu>
+    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.PowerSettingsNew">Connect</MudNavLink>
+    <MudNavLink Href="dashboard" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Dashboard" Disabled="@(!Store.IsConnected)">Dashboard</MudNavLink>
+</MudNavMenu>
+
+@code {
+    protected override void OnInitialized() => Store.Changed += OnStoreChanged;
+
+    private void OnStoreChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Store.Changed -= OnStoreChanged;
+}
