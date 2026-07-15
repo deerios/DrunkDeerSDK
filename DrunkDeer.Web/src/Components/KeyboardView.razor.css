@@ -72,10 +72,10 @@
     position: absolute;
     inset: 4%;
     z-index: 1;
-    --face: #1c1d22;
+    --face: #1d1d1d;
     background: var(--face);
-    border: 1px solid #2c2e35;
-    border-top-color: #3a3d46;
+    border: 1px solid #2f2f2f;
+    border-top-color: #3d3d3d;
     border-radius: calc(var(--u) * 0.12);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04),
                 0 1px 2px rgba(0, 0, 0, 0.5);
@@ -120,7 +120,7 @@
     font-weight: 700;
     letter-spacing: 0.04em;
     line-height: 1;
-    color: var(--mud-palette-primary, #7c6cff);
+    color: var(--mud-palette-primary, #fb2c36);
     opacity: 0;
     pointer-events: none;
 }
@@ -147,7 +147,7 @@
     right: 0;
     bottom: 0;
     height: calc(var(--depth) * 100%);
-    background: #5b6472;
+    background: #666666;
     border-radius: 2px;
 }
 
@@ -166,12 +166,12 @@
 
 /* Past the actuation point: fill goes accent, cap face brightens, glow firms up. */
 .key.pressed .depth-fill {
-    background: var(--mud-palette-primary, #7c6cff);
+    background: var(--mud-palette-primary, #fb2c36);
 }
 
 .key.pressed .cap {
-    border-color: var(--mud-palette-primary, #7c6cff);
-    --face: #24252c;
+    border-color: var(--mud-palette-primary, #fb2c36);
+    --face: #262626;
 }
 
 /* Selection. Distinct from .pressed on purpose: pressed is live travel (transient, driven by
@@ -181,7 +181,7 @@
     border-color: var(--mud-palette-info, #4aa8ff);
     box-shadow: 0 0 0 calc(var(--u) * 0.03) var(--mud-palette-info, #4aa8ff),
                 inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    --face: #22262e;
+    --face: #242424;
 }
 
 .key.selected .legend {
@@ -190,7 +190,7 @@
 
 /* A selected key that is also pressed keeps the accent fill and gains the ring. */
 .key.selected.pressed .cap {
-    --face: #262a33;
+    --face: #2b2b2b;
 }
 
 .key:focus-visible {

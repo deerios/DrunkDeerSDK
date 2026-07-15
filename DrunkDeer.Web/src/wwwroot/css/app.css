@@ -1,10 +1,17 @@
 /* MudBlazor owns component styling. This file only styles the pre-Blazor boot
    splash and the framework error bar, plus a dark backdrop so the initial paint
-   (before MudThemeProvider mounts) isn't a white flash. */
+   (before MudThemeProvider mounts) isn't a white flash.
+
+   The colours below are literal copies of Theme.cs's surfaces and default accent,
+   because nothing here can read the MudBlazor palette: this paints before the app
+   exists. They are the Zits neutral ramp — background is neutral-950, the spinner
+   track neutral-800, its text neutral-400 — and the spinner's accent is the same
+   red the theme falls back to when no keyboard is connected. If Theme.cs changes,
+   change these to match. */
 
 html, body {
     margin: 0;
-    background-color: #1a1a27;
+    background-color: #0a0a0a;
 }
 
 h1:focus {
@@ -43,14 +50,14 @@ h1:focus {
 
     .loading-progress circle {
         fill: none;
-        stroke: #2a2a3c;
+        stroke: #262626;
         stroke-width: 0.6rem;
         transform-origin: 50% 50%;
         transform: rotate(-90deg);
     }
 
         .loading-progress circle:last-child {
-            stroke: #776be7;
+            stroke: #fb2c36;
             stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%;
             transition: stroke-dasharray 0.05s ease-in-out;
         }
@@ -59,7 +66,7 @@ h1:focus {
     position: absolute;
     text-align: center;
     font-weight: bold;
-    color: #b0b0c0;
+    color: #a1a1a1;
     inset: calc(20vh + 3.25rem) 0 auto 0.2rem;
 }
 

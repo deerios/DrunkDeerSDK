@@ -33,6 +33,10 @@ builder.Services.AddSingleton<KeyboardService>();
 builder.Services.AddSingleton<KeyboardStore>();
 builder.Services.AddSingleton<SelectionStore>();
 
+// Watches the other two for colour changes and rebuilds the palette, so it has to outlive any one
+// component. Nothing else reads it: the theme provider is its only consumer.
+builder.Services.AddSingleton<ThemeService>();
+
 // Holds no keyboard state of its own — it reads and writes localStorage — but stays a singleton
 // so the interop module is imported once rather than per panel render.
 builder.Services.AddSingleton<ProfileLibrary>();
