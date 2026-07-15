@@ -1,7 +1,13 @@
-using DrunkDeer.Protocol;
-using DrunkDeer.ProtocolAnalyzer.Capture;
+namespace DrunkDeer.Protocol;
 
-namespace DrunkDeer.ProtocolAnalyzer.Protocol;
+/// <summary>Which way a packet crossed the wire.</summary>
+public enum PacketDirection
+{
+    /// <summary>A packet the host sent to the keyboard.</summary>
+    HostToDevice,
+    /// <summary>A packet the keyboard sent to the host.</summary>
+    DeviceToHost
+}
 
 /// <summary>A named field extracted from an IN packet payload.</summary>
 /// <param name="FirmwareSensitive">

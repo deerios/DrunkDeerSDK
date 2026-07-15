@@ -1,5 +1,5 @@
+using DrunkDeer.Protocol;
 using DrunkDeer.ProtocolAnalyzer.Capture;
-using DrunkDeer.ProtocolAnalyzer.Protocol;
 
 namespace DrunkDeer.ProtocolAnalyzer.Analysis;
 

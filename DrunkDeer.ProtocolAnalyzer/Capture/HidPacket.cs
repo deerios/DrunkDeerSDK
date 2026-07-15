@@ -1,6 +1,6 @@
-namespace DrunkDeer.ProtocolAnalyzer.Capture;
+using DrunkDeer.Protocol;
 
-public enum PacketDirection { HostToDevice, DeviceToHost }
+namespace DrunkDeer.ProtocolAnalyzer.Capture;
 
 /// <summary>A decoded HID interrupt-transfer packet from a USB capture.</summary>
 public sealed record HidPacket(

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using DrunkDeer.Protocol;
 using DrunkDeer.ProtocolAnalyzer.Analysis;
-using DrunkDeer.ProtocolAnalyzer.Protocol;
 
 namespace DrunkDeer.ProtocolAnalyzer.Logging;
 
