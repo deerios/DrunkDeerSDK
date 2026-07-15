@@ -10,10 +10,6 @@ namespace DrunkDeer.Protocol;
 /// </summary>
 public sealed class KeyboardConnection : IKeyboardConnection, IKeyboardConnectionAsync
 {
-	// Highest byte offset IdentityResponse's accessors read (GetLastWinReplace(buf) => buf[32])
-	// plus one. IdentityResponse.Matches itself only requires the 3-byte header.
-	private const int IdentityResponseMinLength = 33;
-
 	private readonly ILogger _log;
 
 	private readonly HidTransport _transport;
@@ -123,32 +119,21 @@ public sealed class KeyboardConnection : IKeyboardConnection, IKeyboardConnectio
 			byte[]? resp = null;
 			byte[]? lastReceived = null;
 
-			// KeyboardDiscoverer.OpenFirst now moves on to the next candidate device on handshake
-			// failure, so a false-positive VID/PID match (e.g. a third-party keyboard sharing a
-			// known pair) no longer needs a long retry budget here before the caller can recover -
-			// 8 x 500ms = 4s is enough headroom for a genuine DrunkDeer keyboard that's slow to
-			// respond, without turning one wrong candidate into a ~10s stall per device.
-			for (int attempt = 0; attempt < 8; attempt++)
+			for (int attempt = 0; attempt < IdentityHandshake.Attempts; attempt++)
 			{
 				// drain anything buffered from before this session.
 				transport.FlushReadBuffer();
 
 				log.LogDebug("Sending IdentityRequest…");
-				transport.Send(IdentityRequest.Build());
+				transport.Send(IdentityHandshake.BuildRequest());
 
-				resp = transport.ReceiveCommand(500);
+				resp = transport.ReceiveCommand(IdentityHandshake.AttemptTimeoutMs);
 				if (resp is not null)
 				{
 					log.LogDebug("Handshake attempt {N}: received {Len} bytes, matches={M}",
 						attempt, resp.Length, IdentityResponse.Matches(resp));
 					lastReceived = resp;
-					// IdentityResponse.Matches only requires 3 bytes (the header), but the
-					// GetModel/GetFirmwareVersion/Get*Value accessors below read up to byte 32.
-					// A header-matching but truncated report (e.g. read from a report queue with
-					// a shorter max length than expected) would otherwise throw
-					// IndexOutOfRangeException out of Open instead of retrying like any other
-					// malformed response.
-					if (IdentityResponse.Matches(resp) && resp.Length >= IdentityResponseMinLength)
+					if (IdentityHandshake.IsComplete(resp))
 						break;
 				}
 				else
@@ -159,30 +144,17 @@ public sealed class KeyboardConnection : IKeyboardConnection, IKeyboardConnectio
 			}
 
 			if (resp is null)
-			{
-				string hint = lastReceived is null
-					? "no packets received (timeout)"
-					: $"last packet: [{string.Join(", ", lastReceived.Take(8).Select(b => $"0x{b:X2}"))}]";
-				throw new InvalidOperationException($"No identity response received from device ({hint}).");
-			}
+				throw new InvalidOperationException(
+					$"No identity response received from device ({IdentityHandshake.DescribeFailure(lastReceived)}).");
 
-			var id = IdentityResponse.GetModel(resp);
-			log.LogDebug("Model bytes: {A:X2} {B:X2} {C:X2}", id[0], id[1], id[2]);
-
-			var resolved = ModelRegistry.Resolve(id[0], id[1], id[2])
-				?? throw new InvalidOperationException(
-					$"Unknown model identity: 0x{id[0]:X2} 0x{id[1]:X2} 0x{id[2]:X2}");
-
-			var info = ModelRegistry.GetInfo(resolved.Slug)
-				?? throw new InvalidOperationException($"No ModelInfo for slug '{resolved.Slug}'.");
-
-			byte fw = IdentityResponse.GetFirmwareVersion(resp);
-			log.LogInformation("Handshake complete: {Name} ({Variant}) fw={Fw}", info.Name, resolved.Variant, fw);
-			return new KeyboardConnection(transport, info, resolved.Variant, fw,
-				IdentityResponse.GetTurboValue(resp),
-				IdentityResponse.GetRapidTriggerEnabled(resp),
-				IdentityResponse.GetLastWinValue(resp),
-				IdentityResponse.GetRapidTriggerAutoMatch(resp),
+			var identity = IdentityHandshake.Interpret(resp);
+			log.LogInformation("Handshake complete: {Name} ({Variant}) fw={Fw}",
+				identity.Model.Name, identity.Variant, identity.FirmwareVersion);
+			return new KeyboardConnection(transport, identity.Model, identity.Variant, identity.FirmwareVersion,
+				identity.InitialTurboValue,
+				identity.InitialRapidTriggerEnabled,
+				identity.InitialLastWinValue,
+				identity.InitialRapidTriggerAutoMatch,
 				log);
 		}
 		catch
