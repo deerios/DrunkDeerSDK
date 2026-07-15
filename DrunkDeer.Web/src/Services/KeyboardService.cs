@@ -284,6 +284,64 @@ public sealed class KeyboardService : IAsyncDisposable
         ActuationChanged?.Invoke();
     }
 
+    // ── Rapid trigger sensitivity (downstroke / upstroke) ────────────────────
+
+    /// <summary>
+    /// Whether this session has written a full sensitivity profile yet, which is what makes the
+    /// in-memory downstroke/upstroke profiles trustworthy — see <see cref="ApplySensitivityAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="DepthsAreKnown"/> because they are separate profiles on the board:
+    /// writing actuation says nothing about what the sensitivity points are.
+    /// </remarks>
+    public bool SensitivityIsKnown { get; private set; }
+
+    /// <summary>How far a key must travel down to re-press under rapid trigger. Only meaningful once <see cref="SensitivityIsKnown"/>.</summary>
+    public IReadOnlyDictionary<DDKey, float> GetDownstrokeProfile() =>
+        _session?.GetDownstrokeProfile() ?? new Dictionary<DDKey, float>();
+
+    /// <summary>How far a key must travel back up to release under rapid trigger. Only meaningful once <see cref="SensitivityIsKnown"/>.</summary>
+    public IReadOnlyDictionary<DDKey, float> GetUpstrokeProfile() =>
+        _session?.GetUpstrokeProfile() ?? new Dictionary<DDKey, float>();
+
+    /// <summary>
+    /// Sets the rapid trigger sensitivity of <paramref name="keys"/>: how far down a key must move
+    /// to re-press, and how far back up to release.
+    /// </summary>
+    /// <remarks>
+    /// The same whole-board problem as actuation, and the same answer. Both points are per-key but
+    /// every write sends the entire board, and the session seeds them at an invented 0.25 mm that
+    /// the A75 cannot confirm — so the first write of a session passes an explicit baseline for the
+    /// keys the user did not select, and later ones leave the default at zero, which the SDK reads
+    /// as "leave the keys I didn't list alone".
+    /// <para>
+    /// Both points go out in one profile: they are two halves of one setting, and writing them
+    /// together keeps a half-applied sensitivity off the board.
+    /// </para>
+    /// </remarks>
+    public async Task ApplySensitivityAsync(
+        float downstrokeMm, float upstrokeMm, IReadOnlyCollection<DDKey> keys,
+        float baselineDownstrokeMm, float baselineUpstrokeMm, CancellationToken ct = default)
+    {
+        var session = _session ?? throw new InvalidOperationException("Not connected.");
+        if (keys.Count == 0) throw new ArgumentException("At least one key must be selected.", nameof(keys));
+
+        var profile = new KeyboardProfile
+        {
+            Downstroke = new KeyDepthProfileBuilder()
+                .Default(SensitivityIsKnown ? 0f : baselineDownstrokeMm)
+                .Keys(keys, downstrokeMm)
+                .Build(),
+            Upstroke = new KeyDepthProfileBuilder()
+                .Default(SensitivityIsKnown ? 0f : baselineUpstrokeMm)
+                .Keys(keys, upstrokeMm)
+                .Build(),
+        };
+
+        await session.ApplyProfileAsync(profile, ct).ConfigureAwait(false);
+        SensitivityIsKnown = true;
+    }
+
     /// <summary>Raised when rapid trigger is switched, so the on-screen board can badge its keys.</summary>
     public event Action? RapidTriggerChanged;
 
@@ -431,6 +489,13 @@ public sealed class KeyboardService : IAsyncDisposable
 
         var profile = new KeyboardProfile { RapidTrigger = session.RapidTriggerEnabled };
         if (DepthsAreKnown) profile.Actuation = CaptureDepths(session.GetActuationProfile());
+        if (SensitivityIsKnown)
+        {
+            // Captured together for the same reason they are written together: half a sensitivity
+            // is not a setting, and the pair is what the board is actually configured with.
+            profile.Downstroke = CaptureDepths(session.GetDownstrokeProfile());
+            profile.Upstroke   = CaptureDepths(session.GetUpstrokeProfile());
+        }
         if (ColorsAreKnown) profile.Theme = CaptureTheme(session);
         return profile;
     }
@@ -495,6 +560,10 @@ public sealed class KeyboardService : IAsyncDisposable
         // Only a non-zero default fills the whole board. A zero one preserves whatever the session
         // already held, so it can't turn a guess into knowledge.
         if (profile.Actuation is { Default: not 0f }) DepthsAreKnown = true;
+        // Both halves, because either one alone leaves the other at the 0.25 mm seed — and a
+        // hand-written profile is free to carry just one.
+        if (profile.Downstroke is { Default: not 0f } && profile.Upstroke is { Default: not 0f })
+            SensitivityIsKnown = true;
         if (profile.Theme is not null)
         {
             ColorsAreKnown = true;
@@ -533,6 +602,7 @@ public sealed class KeyboardService : IAsyncDisposable
     private void ResetShadowState()
     {
         DepthsAreKnown = false;
+        SensitivityIsKnown = false;
         ColorsAreKnown = false;
         ActuationPreviewMm = null;
         ActiveMode = null;

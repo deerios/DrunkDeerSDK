@@ -245,6 +245,110 @@ public class ProfileCaptureTests
 		Assert.That(_service.DepthsAreKnown, Is.False);
 	}
 
+	// ── Rapid trigger sensitivity ────────────────────────────────────────────
+
+	[Test]
+	public void FreshSession_CapturesNoSensitivity()
+	{
+		var profile = _service.CaptureProfile();
+
+		Assert.Multiple(() =>
+		{
+			// Same reason as the depths: the session seeds both points at an invented 0.25 mm and
+			// the board has never been asked, so there is nothing here anyone chose.
+			Assert.That(_service.SensitivityIsKnown, Is.False);
+			Assert.That(profile.Downstroke, Is.Null);
+			Assert.That(profile.Upstroke, Is.Null);
+		});
+	}
+
+	[Test]
+	public async Task AfterASensitivityWrite_CapturesBothPoints()
+	{
+		await _service.ApplySensitivityAsync(
+			downstrokeMm: 0.4f, upstrokeMm: 0.6f, Wasd,
+			baselineDownstrokeMm: 0.25f, baselineUpstrokeMm: 0.25f);
+
+		var profile = _service.CaptureProfile();
+		Assert.Multiple(() =>
+		{
+			Assert.That(_service.SensitivityIsKnown, Is.True);
+			Assert.That(profile.Downstroke, Is.Not.Null);
+			Assert.That(profile.Upstroke, Is.Not.Null);
+			// Writing sensitivity says nothing about the actuation points.
+			Assert.That(profile.Actuation, Is.Null, "a sensitivity write is not a depth write");
+		});
+	}
+
+	[Test]
+	public async Task CapturedSensitivity_ListsTheKeysThatDiffer()
+	{
+		await _service.ApplySensitivityAsync(0.4f, 0.6f, Wasd, 0.25f, 0.25f);
+
+		var down = _service.CaptureProfile().Downstroke!;
+		var up = _service.CaptureProfile().Upstroke!;
+		Assert.Multiple(() =>
+		{
+			// A real default, never zero: zero means "leave the unlisted keys alone", which would
+			// land differently depending on what the target session had already written.
+			Assert.That(down.Default, Is.EqualTo(0.25f).Within(0.001f));
+			Assert.That(up.Default, Is.EqualTo(0.25f).Within(0.001f));
+			Assert.That(down.Keys!.Keys, Is.EquivalentTo(Wasd.Select(k => k.ToString())));
+			Assert.That(up.Keys!.Keys, Is.EquivalentTo(Wasd.Select(k => k.ToString())));
+		});
+	}
+
+	[Test]
+	public async Task ApplyingASensitivityProfile_MakesTheSessionsPictureTrue()
+	{
+		await _service.ApplySensitivityAsync(0.4f, 0.6f, Wasd, 0.25f, 0.25f);
+		var saved = _service.CaptureProfile();
+
+		// A second session has learned nothing, so it may claim nothing…
+		await _service.DisposeAsync();
+		_service = new KeyboardService(
+			new KeyboardStore(), new StubJsRuntime(), new DiagnosticsLog(), NullLoggerFactory.Instance);
+		await _service.ConnectDemoAsync();
+		Assert.That(_service.SensitivityIsKnown, Is.False, "a reconnect starts back at the seed");
+
+		// …until a profile carrying real defaults writes every key.
+		await _service.ApplyProfileAsync(saved);
+
+		Assert.Multiple(() =>
+		{
+			Assert.That(_service.SensitivityIsKnown, Is.True);
+			Assert.That(_service.GetDownstrokeProfile()[DDKey.W], Is.EqualTo(0.4f).Within(0.001f));
+			Assert.That(_service.GetUpstrokeProfile()[DDKey.W], Is.EqualTo(0.6f).Within(0.001f));
+		});
+	}
+
+	[Test]
+	public async Task HalfASensitivityProfile_DoesNotCountAsKnowing()
+	{
+		// Either point alone leaves the other at the seed, so the pair still isn't known. A
+		// hand-written profile is free to carry only one.
+		await _service.ApplyProfileAsync(new KeyboardProfile
+		{
+			Downstroke = new KeyDepthProfileBuilder().Default(0.3f).Build(),
+		});
+
+		Assert.That(_service.SensitivityIsKnown, Is.False);
+	}
+
+	[Test]
+	public async Task PreservingSensitivityProfile_DoesNotCountAsKnowing()
+	{
+		// The zero-default trap, for sensitivity: writes only the listed keys and leaves the rest
+		// at the session's seed, so nothing was learned.
+		await _service.ApplyProfileAsync(new KeyboardProfile
+		{
+			Downstroke = new KeyDepthProfileBuilder().Default(0f).Keys(Wasd, 0.4f).Build(),
+			Upstroke = new KeyDepthProfileBuilder().Default(0f).Keys(Wasd, 0.6f).Build(),
+		});
+
+		Assert.That(_service.SensitivityIsKnown, Is.False);
+	}
+
 	/// <summary>Stands in for the browser. Capture and apply never reach JS, so nothing should call this.</summary>
 	private sealed class StubJsRuntime : IJSRuntime
 	{
