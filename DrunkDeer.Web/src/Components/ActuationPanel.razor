@@ -98,7 +98,35 @@
         Selection.Changed += OnSelectionChanged;
         _depthMm = Math.Clamp(_depthMm, Keyboard.MinDepthMm, Keyboard.MaxDepthMm);
         _baselineMm = _depthMm;
+        SyncDepthFromSelection();
         PublishPreview();
+    }
+
+    /// <summary>Puts the slider on the depth the selected keys actually hold.</summary>
+    /// <remarks>
+    /// The slider is a view of the selection, so it follows both the selection changing and the
+    /// panel being (re)mounted — which is what catches a loaded profile, since applying one happens
+    /// on the Profiles page and coming back rebuilds this panel (as does every tab switch, MudTabs
+    /// disposing the inactive one). Without it the slider kept reading 2.0 mm while the board's
+    /// markers showed the profile's depths.
+    /// <para>
+    /// Gated on <see cref="KeyboardService.DepthsAreKnown"/> for the same reason the markers are
+    /// drawn faintly until then: the session seeds every key at an invented 2.0 mm, and the A75
+    /// cannot report its real depths, so before a write there is nothing here worth reading back.
+    /// </para>
+    /// </remarks>
+    private void SyncDepthFromSelection()
+    {
+        var session = Keyboard.Session;
+        if (session is null || !Keyboard.DepthsAreKnown) return;
+
+        // First selected key in board order stands in for a mixed selection, matching the lighting
+        // panel — and applying then makes the rest match it, which is what the button promises.
+        var key = session.Layout.FirstOrDefault(k => Selection.Contains(k.SlotIndex));
+        if (key is null) return;
+
+        if (Keyboard.GetActuationProfile().TryGetValue(key.Key, out var mm))
+            _depthMm = Math.Clamp(mm, Keyboard.MinDepthMm, Keyboard.MaxDepthMm);
     }
 
     private void OnDepthChanged(float mm)
@@ -184,6 +212,9 @@
 
     private void OnSelectionChanged() => _ = InvokeAsync(() =>
     {
+        // Read the newly selected keys before publishing: the preview draws _depthMm, so syncing
+        // after would push the outgoing selection's depth onto the incoming one.
+        SyncDepthFromSelection();
         PublishPreview();
         StateHasChanged();
     });

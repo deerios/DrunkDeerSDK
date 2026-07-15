@@ -147,7 +147,46 @@
     private int _speed = 5;
     private bool _busy;
 
-    protected override void OnInitialized() => Selection.Changed += OnSelectionChanged;
+    protected override void OnInitialized()
+    {
+        Selection.Changed += OnSelectionChanged;
+        // Board-wide rather than per key, so this one doesn't follow the selection.
+        _brightness = Keyboard.LastBrightness;
+        SyncColorFromSelection();
+    }
+
+    /// <summary>Puts the picker on the colour the selected keys actually hold.</summary>
+    /// <remarks>
+    /// The picker is a view of the selection, so it follows both the selection changing and the
+    /// panel being (re)mounted. Mounting is what catches a profile load: applying one happens on the
+    /// Profiles page, and coming back here builds this panel again — as does every tab switch, since
+    /// MudTabs disposes the inactive panel (ActuationPanel's preview cleanup relies on the same).
+    /// Without this the picker kept showing whatever was last typed while the board showed the
+    /// profile's colours.
+    /// <para>
+    /// Skipped entirely until <see cref="KeyboardService.ColorsAreKnown"/>: the session's colour
+    /// profile is not seeded at connect, so before the first write every key reads black, and
+    /// syncing to that would drop black into the picker as though someone had chosen it.
+    /// </para>
+    /// <para>
+    /// Reading the shadow back is lossless here. A theme's base colour is scaled by its brightness
+    /// on the way in, but per-key colours are stored exactly as written and the brightness rides
+    /// the wire beside them — so what comes out is the colour that was picked, not a dimmed one.
+    /// </para>
+    /// </remarks>
+    private void SyncColorFromSelection()
+    {
+        var session = Keyboard.Session;
+        if (session is null || !Keyboard.ColorsAreKnown) return;
+
+        // A mixed selection is represented by its first key in board order. Applying then makes the
+        // rest match it, which is exactly what the button underneath says it will do.
+        var key = session.Layout.FirstOrDefault(k => Selection.Contains(k.SlotIndex));
+        if (key is null) return;
+
+        var (r, g, b) = session.GetKeyColor(key.Key);
+        _color = new MudColor(r, g, b, byte.MaxValue);
+    }
 
     private async Task ApplyAsync()
     {
@@ -264,7 +303,11 @@
 
     private static string Noun(int n) => n == 1 ? "key" : "keys";
 
-    private void OnSelectionChanged() => _ = InvokeAsync(StateHasChanged);
+    private void OnSelectionChanged() => _ = InvokeAsync(() =>
+    {
+        SyncColorFromSelection();
+        StateHasChanged();
+    });
 
     public void Dispose() => Selection.Changed -= OnSelectionChanged;
 }
