@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using DrunkDeer.Protocol;
+using DrunkDeer.Web.Services;
 using Microsoft.JSInterop;
 
 namespace DrunkDeer.Web.Transport;
@@ -87,6 +88,12 @@ public sealed class WebHidKeyboardConnection : IKeyboardConnectionAsync, IAsyncD
 	/// activation, and it will not grant access without the user choosing a device. Keep the
 	/// module import off this path (do it at render time) so the gesture isn't spent waiting.
 	/// </remarks>
+	/// <param name="trace">
+	/// Where the handshake's packets are recorded. The handshake has to happen in here, before
+	/// anyone outside can hold this connection to wrap it, so tracing is passed in rather than
+	/// applied around — and the handshake is the exchange most worth having a record of, since
+	/// what the keyboard answers here decides which board the whole app thinks it is talking to.
+	/// </param>
 	/// <returns>
 	/// The open connection, or <see langword="null"/> if the user dismissed the picker without
 	/// choosing — that's a normal outcome, not a failure.
@@ -95,7 +102,7 @@ public sealed class WebHidKeyboardConnection : IKeyboardConnectionAsync, IAsyncD
 	/// A device was chosen, but it never completed the handshake.
 	/// </exception>
 	public static async Task<WebHidKeyboardConnection?> RequestAsync(
-		IJSObjectReference module, CancellationToken ct = default)
+		IJSObjectReference module, DiagnosticsLog trace, CancellationToken ct = default)
 	{
 		var filters = ModelRegistry.DiscoveryPairs
 			.Select(p => new { vendorId = p.Vid, productId = p.Pid })
@@ -112,7 +119,8 @@ public sealed class WebHidKeyboardConnection : IKeyboardConnectionAsync, IAsyncD
 		{
 			connection._self = DotNetObjectReference.Create(connection);
 			await module.InvokeVoidAsync("attach", ct, connection._handle, connection._self).ConfigureAwait(false);
-			connection._identity = await connection.HandshakeAsync(ct).ConfigureAwait(false);
+			connection._identity = await connection.HandshakeAsync(new TracingKeyboardConnection(connection, trace), ct)
+				.ConfigureAwait(false);
 			return connection;
 		}
 		catch
@@ -127,16 +135,21 @@ public sealed class WebHidKeyboardConnection : IKeyboardConnectionAsync, IAsyncD
 	/// necessary but not sufficient — the user can pick any device the filters let through — so a
 	/// device that never answers is rejected here rather than treated as a keyboard.
 	/// </summary>
-	private async Task<IdentityResult> HandshakeAsync(CancellationToken ct)
+	/// <param name="io">
+	/// The surface to talk to the device through: this connection, wrapped so the exchange can be
+	/// observed. Not disposed here — it is a view onto this connection, and disposing it would
+	/// close the very device the caller is about to be handed.
+	/// </param>
+	private async Task<IdentityResult> HandshakeAsync(IKeyboardConnectionAsync io, CancellationToken ct)
 	{
 		byte[]? lastReceived = null;
 
 		for (int attempt = 0; attempt < IdentityHandshake.Attempts; attempt++)
 		{
-			await FlushReadBufferAsync(ct).ConfigureAwait(false);
-			await SendAsync(IdentityHandshake.BuildRequest(), ct).ConfigureAwait(false);
+			await io.FlushReadBufferAsync(ct).ConfigureAwait(false);
+			await io.SendAsync(IdentityHandshake.BuildRequest(), ct).ConfigureAwait(false);
 
-			var response = await ReceiveCommandAsync(IdentityHandshake.AttemptTimeoutMs, ct).ConfigureAwait(false);
+			var response = await io.ReceiveCommandAsync(IdentityHandshake.AttemptTimeoutMs, ct).ConfigureAwait(false);
 			if (response is null) continue;
 
 			lastReceived = response;

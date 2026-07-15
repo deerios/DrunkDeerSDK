@@ -1,6 +1,7 @@
 using DrunkDeer.Protocol;
 using DrunkDeer.Simulation;
 using DrunkDeer.Web.Transport;
+using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 
 namespace DrunkDeer.Web.Services;
@@ -20,15 +21,19 @@ public sealed class KeyboardService : IAsyncDisposable
 {
     private readonly KeyboardStore _store;
     private readonly IJSRuntime _js;
+    private readonly DiagnosticsLog _diagnostics;
+    private readonly ILoggerFactory _loggerFactory;
     private KeyboardSession? _session;
     private SimulatedKeyboardConnection? _sim;
     private WebHidKeyboardConnection? _webhid;
     private IJSObjectReference? _module;
 
-    public KeyboardService(KeyboardStore store, IJSRuntime js)
+    public KeyboardService(KeyboardStore store, IJSRuntime js, DiagnosticsLog diagnostics, ILoggerFactory loggerFactory)
     {
         _store = store;
         _js = js;
+        _diagnostics = diagnostics;
+        _loggerFactory = loggerFactory;
     }
 
     /// <summary>
@@ -71,7 +76,11 @@ public sealed class KeyboardService : IAsyncDisposable
         try
         {
             _sim = new SimulatedKeyboardConnection { IdleJitter = true };
-            var session = KeyboardSession.Open(_sim);
+            // Opened through the async factory even though the simulator offers both surfaces, so
+            // demo mode runs the same async-only session shape a real WebHID board does — and its
+            // traffic reaches the diagnostics page by the same path.
+            var session = KeyboardSession.OpenAsyncConnection(
+                new TracingKeyboardConnection(_sim, _diagnostics), _loggerFactory);
             HookSession(session);
             await session.StartPollingAsync(ct).ConfigureAwait(false);
             _session = session;
@@ -107,7 +116,7 @@ public sealed class KeyboardService : IAsyncDisposable
         WebHidKeyboardConnection? connection = null;
         try
         {
-            connection = await WebHidKeyboardConnection.RequestAsync(module, ct).ConfigureAwait(false);
+            connection = await WebHidKeyboardConnection.RequestAsync(module, _diagnostics, ct).ConfigureAwait(false);
             if (connection is null)
             {
                 _store.SetDisconnected();
@@ -115,7 +124,8 @@ public sealed class KeyboardService : IAsyncDisposable
             }
 
             connection.Disconnected += OnHardwareUnplugged;
-            var session = KeyboardSession.OpenAsyncConnection(connection);
+            var session = KeyboardSession.OpenAsyncConnection(
+                new TracingKeyboardConnection(connection, _diagnostics), _loggerFactory);
             HookSession(session);
             await session.StartPollingAsync(ct).ConfigureAwait(false);
             _session = session;
