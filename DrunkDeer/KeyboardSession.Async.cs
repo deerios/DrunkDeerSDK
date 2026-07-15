@@ -300,6 +300,17 @@ public partial class KeyboardSession
 		finally { _wireGate.Release(); }
 	}
 
+	// As above, for commands that read a value back. The gate covers the whole read, so a
+	// multi-chunk gateway read can't have a poll frame land between two of its chunks.
+	private async Task<T> RunWireCommandAsync<T>(Func<IKeyboardConnectionAsync, CancellationToken, Task<T>> command, CancellationToken ct)
+	{
+		EnsureNotSyncPolling();
+		var conn = AsyncConnectionOrThrow;
+		await _wireGate.WaitAsync(ct).ConfigureAwait(false);
+		try { return await command(conn, ct).ConfigureAwait(false); }
+		finally { _wireGate.Release(); }
+	}
+
 	// ── Async key-point writers (assume the gate is held) ─────────────────────
 
 	private async Task WriteKeyPointStandardAsync(IKeyboardConnectionAsync conn, byte[] values,
