@@ -33,4 +33,8 @@ builder.Services.AddSingleton<KeyboardService>();
 builder.Services.AddSingleton<KeyboardStore>();
 builder.Services.AddSingleton<SelectionStore>();
 
+// Holds no keyboard state of its own — it reads and writes localStorage — but stays a singleton
+// so the interop module is imported once rather than per panel render.
+builder.Services.AddSingleton<ProfileLibrary>();
+
 await builder.Build().RunAsync();

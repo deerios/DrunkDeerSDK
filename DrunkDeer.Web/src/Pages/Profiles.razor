@@ -1,0 +1,30 @@
+@page "/profiles"
+
+<PageTitle>Profiles — DrunkDeer</PageTitle>
+
+@* A page rather than a dashboard tab (FUTURE_PLAN §5.3): a profile covers the whole board, so
+   unlike the actuation and lighting panels it has nothing to do with the key selection, and
+   nothing to gain from sitting beside the keyboard. *@
+
+<MudText Typo="Typo.h5" Class="mb-4">Profiles</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="7" lg="5">
+        <ProfilePanel />
+    </MudItem>
+    <MudItem xs="12" md="5" lg="7">
+        <MudPaper Class="pa-4" Elevation="1">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">About profiles</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                A profile is the board's actuation depths, lighting, and rapid-trigger setting saved
+                together. They're stored in this browser, and export to a JSON file the
+                <code>deerkb</code> command-line tool reads and writes — the two use the same format.
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                A profile only records what this session actually set. The keyboard can't report its
+                own settings back, so anything configured before you connected — or in another app —
+                isn't visible here and won't be saved.
+            </MudText>
+        </MudPaper>
+    </MudItem>
+</MudGrid>

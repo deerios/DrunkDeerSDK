@@ -364,6 +364,7 @@ public sealed class KeyboardService : IAsyncDisposable
         }
 
         ColorsAreKnown = true;
+        LastBrightness = brightness;
         // Sending per-key colours is what puts the board back into its custom mode, lit.
         ActiveMode = null;
         BacklightOff = false;
@@ -378,6 +379,7 @@ public sealed class KeyboardService : IAsyncDisposable
     {
         var session = _session ?? throw new InvalidOperationException("Not connected.");
         await session.SetLightingModeAsync(mode, brightness, speed, ct).ConfigureAwait(false);
+        LastBrightness = brightness;
         ActiveMode = mode;
         BacklightOff = false;
         LightingChanged?.Invoke();
@@ -390,6 +392,116 @@ public sealed class KeyboardService : IAsyncDisposable
         await session.DisableLightingAsync(ct).ConfigureAwait(false);
         ActiveMode = null;
         BacklightOff = true;
+        LightingChanged?.Invoke();
+    }
+
+    // ── Profiles ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The brightness this session last sent. The firmware carries one brightness for the whole
+    /// board and the session doesn't keep it — every write passes it — so capturing a profile
+    /// needs it remembered here.
+    /// </summary>
+    public byte LastBrightness { get; private set; } = 9;
+
+    /// <summary>
+    /// A snapshot of the settings this session knows to be true, ready to serialise.
+    /// </summary>
+    /// <remarks>
+    /// Only what the session actually knows goes in, which is why the two "known" flags gate it.
+    /// The A75 can't report its settings back, so before this session has written a whole board
+    /// the in-memory profile is the SDK's invented seed — 2.0 mm per key, and black — and
+    /// capturing that would save a guess as though the user had chosen it. Rapid trigger is the
+    /// exception: the board reports it in the identity handshake, so it is always real.
+    /// <para>
+    /// Depths and colours are captured as "the value most keys share, plus the exceptions", so the
+    /// default is never zero. That keeps the JSON small and readable, and it matters on apply:
+    /// the SDK reads a zero default as "leave the keys I didn't list alone", which would make a
+    /// saved profile land differently depending on what the session it was applied to had already
+    /// written. A real default writes the whole board and lands the same every time.
+    /// </para>
+    /// </remarks>
+    public KeyboardProfile CaptureProfile()
+    {
+        var session = _session ?? throw new InvalidOperationException("Not connected.");
+
+        var profile = new KeyboardProfile { RapidTrigger = session.RapidTriggerEnabled };
+        if (DepthsAreKnown) profile.Actuation = CaptureDepths(session.GetActuationProfile());
+        if (ColorsAreKnown) profile.Theme = CaptureTheme(session);
+        return profile;
+    }
+
+    private static KeyDepthProfile? CaptureDepths(IReadOnlyDictionary<DDKey, float> depths)
+    {
+        if (depths.Count == 0) return null;
+
+        float baseline = Modal(depths.Values);
+        var builder = new KeyDepthProfileBuilder().Default(baseline);
+        foreach (var (key, depthMm) in depths)
+            if (depthMm != baseline) builder.Key(key, depthMm);
+        return builder.Build();
+    }
+
+    private KeyboardTheme? CaptureTheme(KeyboardSession session)
+    {
+        var colors = session.Layout
+            .Select(k => (k.Key, Color: session.GetKeyColor(k.Key)))
+            .ToList();
+        if (colors.Count == 0) return null;
+
+        var baseColor = Modal(colors.Select(c => c.Color));
+        var overrides = colors
+            .Where(c => c.Color != baseColor)
+            .ToDictionary(
+                c => c.Key.ToString(),
+                c => new KeyColor { R = c.Color.R, G = c.Color.G, B = c.Color.B });
+
+        return new KeyboardTheme
+        {
+            BaseColor  = new RgbColor(baseColor.R, baseColor.G, baseColor.B),
+            Brightness = LastBrightness,
+            // Deliberately not set: the session stores colours with the background's brightness
+            // already scaled into them, so setting it here would dim the background a second time.
+            BaseBrightness = null,
+            Keys = overrides.Count > 0 ? overrides : null,
+        };
+    }
+
+    /// <summary>The value that occurs most often — the cheapest whole-board default to write.</summary>
+    private static T Modal<T>(IEnumerable<T> values) where T : notnull =>
+        values.GroupBy(v => v)
+              .OrderByDescending(g => g.Count())
+              .First().Key;
+
+    /// <summary>
+    /// Writes a saved profile to the board and re-synchronises what this session claims to know.
+    /// </summary>
+    /// <remarks>
+    /// A captured profile carries a real default and a base colour, so applying one writes every
+    /// key — which is what finally makes the session's picture of the board true rather than
+    /// inherited from the SDK's seed. That is why applying a profile is the one operation that can
+    /// promote both "known" flags on its own.
+    /// </remarks>
+    public async Task ApplyProfileAsync(KeyboardProfile profile, CancellationToken ct = default)
+    {
+        var session = _session ?? throw new InvalidOperationException("Not connected.");
+
+        await session.ApplyProfileAsync(profile, ct).ConfigureAwait(false);
+
+        // Only a non-zero default fills the whole board. A zero one preserves whatever the session
+        // already held, so it can't turn a guess into knowledge.
+        if (profile.Actuation is { Default: not 0f }) DepthsAreKnown = true;
+        if (profile.Theme is not null)
+        {
+            ColorsAreKnown = true;
+            LastBrightness = profile.Theme.Brightness;
+            // Per-key colours are what select the firmware's custom mode, so any animation is over.
+            ActiveMode = null;
+            BacklightOff = false;
+        }
+
+        ActuationPreviewMm = null;
+        ActuationChanged?.Invoke();
         LightingChanged?.Invoke();
     }
 
@@ -421,6 +533,7 @@ public sealed class KeyboardService : IAsyncDisposable
         ActuationPreviewMm = null;
         ActiveMode = null;
         BacklightOff = false;
+        LastBrightness = 9;
     }
 
     private void PublishConnected(bool demo)

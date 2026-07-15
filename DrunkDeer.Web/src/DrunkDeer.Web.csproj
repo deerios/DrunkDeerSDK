@@ -19,6 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Keeps the reflection-serialised profile types through publish trimming. See the file. -->
+    <TrimmerRootDescriptor Include="TrimmerRoots.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\DrunkDeer\DrunkDeer.csproj" />
   </ItemGroup>
 

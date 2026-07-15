@@ -85,6 +85,10 @@ else
                     <MudTabPanel Text="Lighting">
                         <LightingPanel />
                     </MudTabPanel>
+                    @* Profiles is a page of its own, not a fourth tab here: this column only fits
+                       three (a fourth collapses the strip into scroll arrows), and profiles are a
+                       whole-board thing that has nothing to do with the key selection these
+                       panels edit. *@
                     <MudTabPanel Text="Device">
                         <DevicePanel />
                     </MudTabPanel>
