@@ -56,6 +56,21 @@ public static class ProtocolOracle
     }
 
     /// <summary>
+    /// <see langword="true"/> if this packet is part of the continuous key-travel polling: the
+    /// request the poll loop repeats, or one of the travel packets answering it.
+    /// </summary>
+    /// <remarks>
+    /// Polling is almost all the traffic a connected keyboard ever carries - hundreds of packets a
+    /// second, against a handful for any configuration the user actually performs. Anything
+    /// presenting or recording live traffic needs to separate the two, and this is the cheap test
+    /// for it: no allocation and no classification, so it is safe to call on every packet.
+    /// </remarks>
+    public static bool IsTravelPolling(ReadOnlySpan<byte> buf, PacketDirection direction) =>
+        direction == PacketDirection.HostToDevice
+            ? buf.StartsWith(TravelRequest.Header)
+            : TravelResponse.Matches(buf) || KeyTravelHighPrecision.Matches(buf);
+
+    /// <summary>
     /// Validates that an observed IN packet is the expected response to the preceding OUT.
     /// Returns <see langword="null"/> when the sequence is correct.
     /// </summary>

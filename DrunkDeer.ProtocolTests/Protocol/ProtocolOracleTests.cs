@@ -148,6 +148,60 @@ public class ProtocolOracleTests
         Assert.That(result.StructuralOk, Is.False);
     }
 
+    // ── Travel polling ────────────────────────────────────────────────────────
+    // The filter that separates the poll loop's noise from traffic a user caused. Getting it
+    // wrong in the "yes" direction hides real writes; in the "no" direction it buries them.
+
+    [Test]
+    public void TheTravelRequest_AndItsResponses_AreTravelPolling()
+    {
+        var standard = new byte[64]; standard[0] = 0xB7;
+        var highPrecision = new byte[64]; highPrecision[0] = 0xFD; highPrecision[1] = 0x06;
+
+        Assert.That(ProtocolOracle.IsTravelPolling(TravelRequest.Build(), PacketDirection.HostToDevice), Is.True);
+        Assert.That(ProtocolOracle.IsTravelPolling(standard, PacketDirection.DeviceToHost), Is.True);
+        Assert.That(ProtocolOracle.IsTravelPolling(highPrecision, PacketDirection.DeviceToHost), Is.True);
+    }
+
+    // Shares the 0xB6 command byte with the travel request; if this reads as polling, every
+    // actuation write vanishes from the log that exists to show it.
+    [Test]
+    public void AnActuationWrite_IsNotTravelPolling()
+    {
+        var packet = WriteActuationPointStandard.Build(packetIndex: 0, keyValues: new byte[59]);
+
+        Assert.That(ProtocolOracle.IsTravelPolling(packet, PacketDirection.HostToDevice), Is.False);
+    }
+
+    [Test]
+    public void TheHandshake_IsNotTravelPolling()
+    {
+        var response = new byte[64];
+        response[0] = 0xA0; response[1] = 0x02; response[2] = 0x00;
+
+        Assert.That(ProtocolOracle.IsTravelPolling(IdentityRequest.Build(), PacketDirection.HostToDevice), Is.False);
+        Assert.That(ProtocolOracle.IsTravelPolling(response, PacketDirection.DeviceToHost), Is.False);
+    }
+
+    // The travel response's byte is only travel data coming *from* the board; the same first byte
+    // going the other way is not something the poll loop sends.
+    [Test]
+    public void TravelPolling_IsDirectionSensitive()
+    {
+        var response = new byte[64];
+        response[0] = 0xB7;
+
+        Assert.That(ProtocolOracle.IsTravelPolling(response, PacketDirection.HostToDevice), Is.False);
+        Assert.That(ProtocolOracle.IsTravelPolling(TravelRequest.Build(), PacketDirection.DeviceToHost), Is.False);
+    }
+
+    [Test]
+    public void TravelPolling_HandlesAnEmptyPacket()
+    {
+        Assert.That(ProtocolOracle.IsTravelPolling([], PacketDirection.HostToDevice), Is.False);
+        Assert.That(ProtocolOracle.IsTravelPolling([], PacketDirection.DeviceToHost), Is.False);
+    }
+
     [Test]
     public void ValidateSequence_AcceptsTheResponseTheCommandAskedFor()
     {
