@@ -1,0 +1,22 @@
+/* The colour the picker is currently holding, shown as itself rather than as a hex string.
+   The picker's field and the hex field below it both say what the colour is in text; this is
+   the only thing on the panel that shows it. */
+
+.colour-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.swatch {
+    /* Without this the flex row squashes the swatch to a slot rather than letting the picker
+       shrink — a colour chip a few px wide reads as nothing at all. */
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 4px;
+    /* The chip has to stay visible against both the dark panel and its own colour, so it gets a
+       hairline rather than relying on contrast with the background. */
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}

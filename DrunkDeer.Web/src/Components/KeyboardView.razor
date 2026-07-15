@@ -21,7 +21,10 @@
 }
 else
 {
-    <div class="board" @ref="_board"
+    @* Rapid trigger rides a class rather than a custom property on the style attribute: keyboard.js
+       owns --u and the board's height there, and re-rendering style would wipe both. It is board-wide
+       state, so one class here badges every key — see _rapidTrigger. *@
+    <div class="board @(_rapidTrigger ? "rt" : "")" @ref="_board"
          style="--cols:@F(_cols); --rows:@F(_rows)">
         @* Rendered here rather than created in JS so that scoped CSS actually reaches it —
            isolation only rewrites selectors for elements Blazor itself stamps. *@
@@ -37,6 +40,9 @@ else
                 <div class="glow"></div>
                 <div class="cap">
                     <span class="legend">@k.Legend</span>
+                    @* Always rendered, shown by .board.rt: the flag is board-wide, so this never
+                       needs to differ per key and must not re-render when it flips. *@
+                    <span class="rt-badge" aria-hidden="true">RT</span>
                     <div class="depth-bar"><div class="depth-fill"></div></div>
                 </div>
                 @if (k.Secondary is { } s)
@@ -62,6 +68,12 @@ else
     private IReadOnlyList<KeyInfo> _layout = [];
     private float _cols, _rows, _maxDepth = 4f;
 
+    // Board-wide, not per key: the firmware carries one rapid trigger flag for the whole keyboard
+    // (KeyboardSession.EnableRapidTrigger). The per-key rapid trigger config the protocol defines
+    // lives in the KeyTrigger region behind the extended gateway, which the A75 hasn't got, so
+    // there is no per-key state to draw here even if the board looks like it should have one.
+    private bool _rapidTrigger;
+
     // Cached because Act() runs per key and the session rebuilds this dictionary on every call.
     private IReadOnlyDictionary<DDKey, float> _actuation = new Dictionary<DDKey, float>();
 
@@ -73,9 +85,13 @@ else
         Selection.Changed += OnSelectionChanged;
         Keyboard.LightingChanged += OnLightingChanged;
         Keyboard.ActuationChanged += OnActuationChanged;
+        Keyboard.RapidTriggerChanged += OnRapidTriggerChanged;
 
         var session = Keyboard.Session;
         if (session is null) return;
+        // The board reports this in the identity handshake, so unlike the depths and colours it is
+        // real state from the start and needs no "known yet?" gate.
+        _rapidTrigger = Keyboard.RapidTriggerEnabled;
         _layout = session.Layout;
         _cols = session.BoardWidth;
         _rows = session.BoardHeight;
@@ -249,6 +265,15 @@ else
         return $"rgb({To(r + m)},{To(g + m)},{To(b + m)})";
     }
 
+    // The only one of these that goes through the render tree: it flips a class on .board rather
+    // than a per-key custom property, and the keys' own class attributes don't change, so the diff
+    // leaves the .pressed/.selected classes JS owns untouched.
+    private void OnRapidTriggerChanged() => _ = InvokeAsync(() =>
+    {
+        _rapidTrigger = Keyboard.RapidTriggerEnabled;
+        StateHasChanged();
+    });
+
     private void OnLightingChanged() => _ = InvokeAsync(PushColorsAsync);
 
     private async Task PushColorsAsync()
@@ -275,6 +300,7 @@ else
         Selection.Changed -= OnSelectionChanged;
         Keyboard.LightingChanged -= OnLightingChanged;
         Keyboard.ActuationChanged -= OnActuationChanged;
+        Keyboard.RapidTriggerChanged -= OnRapidTriggerChanged;
         if (_module is not null)
         {
             try

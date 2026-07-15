@@ -45,9 +45,23 @@
             <b>@Selection.Count</b> @Noun(Selection.Count) selected
         </MudText>
 
-        <MudColorPicker @bind-Value="_color" Label="Key colour" Placeholder="Pick a colour"
-                        Variant="Variant.Outlined" Margin="Margin.Dense"
-                        Disabled="@_busy" Class="mb-2" />
+        @* ShowAlpha is off for two reasons: the keyboard has no alpha channel, and it is what turns
+           the field's text from #rrggbbaa into a plain #rrggbb worth pasting somewhere else.
+           Editable then makes that same field the hex entry, so the colour has one text box rather
+           than two showing near-identical strings.
+
+           The swatch is not decoration. The picker silently ignores text it can't parse — it keeps
+           the last good colour but leaves the bad text sitting in the field, and it reports none of
+           this (TextChanged only fires for values it parsed, so there is nothing to hang an error
+           message on). The swatch is then the only thing still showing the colour that would
+           actually be written. *@
+        <div class="colour-row mb-2">
+            <span class="swatch" style="background-color:@Hex(_color)" aria-hidden="true"></span>
+            <MudColorPicker @bind-Value="_color" Label="Key colour" Placeholder="#3060c0"
+                            Editable="true" ShowAlpha="false"
+                            Variant="Variant.Outlined" Margin="Margin.Dense"
+                            Disabled="@_busy" Class="flex-grow-1" />
+        </div>
 
         @if (!Keyboard.ColorsAreKnown)
         {
@@ -55,9 +69,15 @@
                 This board can't report its current colours, and the firmware only accepts
                 whole-board writes — so applying also colours every key you didn't select.
             </MudAlert>
-            <MudColorPicker @bind-Value="_background" Label="All other keys"
-                            Variant="Variant.Outlined" Margin="Margin.Dense"
-                            Disabled="@_busy" Class="mt-3" />
+            @* Same treatment as the key colour above: this is the same control choosing the same
+               kind of value, so it gets the same swatch and the same plain #rrggbb. *@
+            <div class="colour-row mt-3">
+                <span class="swatch" style="background-color:@Hex(_background)" aria-hidden="true"></span>
+                <MudColorPicker @bind-Value="_background" Label="All other keys"
+                                Editable="true" ShowAlpha="false"
+                                Variant="Variant.Outlined" Margin="Margin.Dense"
+                                Disabled="@_busy" Class="flex-grow-1" />
+            </div>
             <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-3">
                 Background brightness: @_backgroundBrightness
             </MudText>
@@ -221,6 +241,13 @@
     }
 
     private static RgbColor ToRgb(MudColor c) => new(c.R, c.G, c.B);
+
+    /// <summary>The colour as <c>#rrggbb</c>.</summary>
+    /// <remarks>
+    /// Deliberately not <c>MudColor.Value</c>, which appends the alpha byte (<c>#3060c0ff</c>).
+    /// The keyboard has no alpha channel, and an eight-digit hex is not what anything else takes.
+    /// </remarks>
+    private static string Hex(MudColor c) => c.ToString(MudColorOutputFormats.Hex);
 
     /// <summary>Turns an enum name like <c>WaveSpectrum</c> into "Wave spectrum".</summary>
     private static string Humanize(LightingMode mode)

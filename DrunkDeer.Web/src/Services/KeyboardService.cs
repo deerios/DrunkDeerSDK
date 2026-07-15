@@ -284,12 +284,16 @@ public sealed class KeyboardService : IAsyncDisposable
         ActuationChanged?.Invoke();
     }
 
+    /// <summary>Raised when rapid trigger is switched, so the on-screen board can badge its keys.</summary>
+    public event Action? RapidTriggerChanged;
+
     /// <summary>Turns rapid trigger on or off. A whole-board setting, so it needs no selection.</summary>
     public async Task SetRapidTriggerAsync(bool enabled, bool autoMatch = false, CancellationToken ct = default)
     {
         var session = _session ?? throw new InvalidOperationException("Not connected.");
         if (enabled) await session.EnableRapidTriggerAsync(autoMatch, ct).ConfigureAwait(false);
         else await session.DisableRapidTriggerAsync(ct).ConfigureAwait(false);
+        RapidTriggerChanged?.Invoke();
     }
 
     // ── Lighting ─────────────────────────────────────────────────────────────
