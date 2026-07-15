@@ -30,7 +30,68 @@ internal static class YamlLoader
 		LoadModels(def, Path.Combine(protocolDir, "models.yaml"));
 		LoadDiscovery(def, Path.Combine(protocolDir, "models.yaml"));
 		LoadProfileBlocks(def, Path.Combine(protocolDir, "profile_blocks.yaml"));
+		LoadGeometry(def, Path.Combine(protocolDir, "geometry"));
 		return def;
+	}
+
+	private static void LoadGeometry(ProtocolDef def, string geometryDir)
+	{
+		if (!Directory.Exists(geometryDir)) return;
+
+		foreach (var path in Directory.EnumerateFiles(geometryDir, "*.yaml").OrderBy(p => p))
+		{
+			var raw = ParseYaml(path);
+			if (!raw.TryGetValue("geometry", out var geoObj) || geoObj is not Dictionary<object, object> geo)
+				continue;
+
+			foreach (var (slugObj, defObj) in geo)
+			{
+				if (defObj is not Dictionary<object, object> modelGeo) continue;
+
+				var gd = new GeometryDef { Slug = (string)slugObj };
+				if (modelGeo.TryGetValue("board_name", out var bnObj))
+					gd.BoardName = (string)bnObj;
+
+				if (modelGeo.TryGetValue("variants", out var varsObj) &&
+					varsObj is Dictionary<object, object> variants)
+				{
+					foreach (var (vnObj, vdObj) in variants)
+					{
+						if (vdObj is not Dictionary<object, object> variantDef) continue;
+						var gv = new GeometryVariant { Variant = (string)vnObj };
+
+						if (variantDef.TryGetValue("aliases", out var aliasObj) && aliasObj is List<object> aliases)
+							gv.Aliases = aliases.Cast<string>().ToList();
+
+						if (variantDef.TryGetValue("keys", out var keysObj) && keysObj is List<object> keys)
+							foreach (var keyObj in keys)
+								if (keyObj is Dictionary<object, object> k)
+									gv.Keys.Add(ParseGeometryKey(k));
+
+						gd.Variants.Add(gv);
+					}
+				}
+
+				def.Geometries.Add(gd);
+			}
+		}
+	}
+
+	private static GeometryKey ParseGeometryKey(Dictionary<object, object> k)
+	{
+		var gk = new GeometryKey();
+		if (k.TryGetValue("key", out var keyObj))       gk.Key    = (string)keyObj;
+		if (k.TryGetValue("slot", out var slotObj))     gk.Slot   = ToInt(slotObj);
+		if (k.TryGetValue("legend", out var legObj))    gk.Legend = (string)legObj;
+		if (k.TryGetValue("x", out var xObj))           gk.X      = ToFloat(xObj);
+		if (k.TryGetValue("y", out var yObj))           gk.Y      = ToFloat(yObj);
+		if (k.TryGetValue("w", out var wObj))           gk.W      = ToFloat(wObj);
+		if (k.TryGetValue("h", out var hObj))           gk.H      = ToFloat(hObj);
+		if (k.TryGetValue("x2", out var x2Obj))         gk.X2     = ToFloat(x2Obj);
+		if (k.TryGetValue("y2", out var y2Obj))         gk.Y2     = ToFloat(y2Obj);
+		if (k.TryGetValue("w2", out var w2Obj))         gk.W2     = ToFloat(w2Obj);
+		if (k.TryGetValue("h2", out var h2Obj))         gk.H2     = ToFloat(h2Obj);
+		return gk;
 	}
 
 	private static void LoadStructs(ProtocolDef def, string path)
@@ -284,6 +345,15 @@ internal static class YamlLoader
 			return list.Select(ToByteValue).ToList();
 		return [];
 	}
+
+	private static float ToFloat(object obj) => obj switch
+	{
+		float f => f,
+		double d => (float)d,
+		byte or sbyte or short or ushort or int or uint or long or ulong => Convert.ToSingle(obj),
+		string s => float.Parse(s, System.Globalization.CultureInfo.InvariantCulture),
+		_ => throw new InvalidOperationException($"Cannot convert {obj} ({obj.GetType().Name}) to float"),
+	};
 
 	private static int ToInt(object obj) => obj switch
 	{

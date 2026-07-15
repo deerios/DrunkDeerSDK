@@ -193,6 +193,7 @@ public partial class KeyboardSession : IDisposable, IAsyncDisposable
 	// Per-model layout and key-mapping data (initialised in constructor from KeyLayout)
 	private readonly int[] _rgbIndices;
 	private readonly IReadOnlyDictionary<DDKey, int> _keyIndexMap;
+	private readonly IReadOnlyList<KeyInfo> _layout;
 
 	// Stateful key-point profiles - used by DDKey depth-setter overloads so a
 	// per-key change can be sent as a complete packet with all other keys unchanged.
@@ -216,6 +217,23 @@ public partial class KeyboardSession : IDisposable, IAsyncDisposable
 	public string Variant { get; }
 	/// <summary>Firmware version byte returned by the keyboard.</summary>
 	public byte FirmwareVersion { get; }
+
+	/// <summary>
+	/// Ordered physical key geometry for the connected model+variant, in KLE 1u
+	/// key units. Each <see cref="KeyInfo"/> carries the key's <see cref="DDKey"/>,
+	/// firmware slot index, legend, and placement. Empty when no geometry has been
+	/// defined for this model yet - check <see cref="HasLayout"/>.
+	/// </summary>
+	public IReadOnlyList<KeyInfo> Layout => _layout;
+
+	/// <summary><see langword="true"/> when <see cref="Layout"/> has geometry for this model+variant.</summary>
+	public bool HasLayout => _layout.Count > 0;
+
+	/// <summary>Board width in KLE key units (largest key right-edge). 0 when <see cref="HasLayout"/> is false.</summary>
+	public float BoardWidth { get; }
+
+	/// <summary>Board height in KLE key units (largest key bottom-edge). 0 when <see cref="HasLayout"/> is false.</summary>
+	public float BoardHeight { get; }
 
 	/// <summary>
 	/// Key travel depth in mm that fires <see cref="KeyDown"/>. Default: 1.0 mm.
@@ -463,6 +481,17 @@ public partial class KeyboardSession : IDisposable, IAsyncDisposable
 			var layout = KeyLayout.GetLayout(Model.Slug);
 			_rgbIndices      = KeyLayout.GetRgbIndices(Model.Slug, Variant);
 			_keyIndexMap     = KeyLayout.BuildIndexMap(layout);
+
+			// Physical geometry is optional: only defined models+variants have it;
+			// everything else gets an empty layout (HasLayout == false).
+			KeyGeometry.TryGetKeys(Model.Slug, Variant, out _layout);
+			foreach (var k in _layout)
+			{
+				float right  = Math.Max(k.X + k.W, k.Secondary is { } s1 ? s1.X + s1.W : 0f);
+				float bottom = Math.Max(k.Y + k.H, k.Secondary is { } s2 ? s2.Y + s2.H : 0f);
+				if (right  > BoardWidth)  BoardWidth  = right;
+				if (bottom > BoardHeight) BoardHeight = bottom;
+			}
 
 			int profileSize = TotalKeyCount;
 			_actuationProfile = new float[profileSize];
