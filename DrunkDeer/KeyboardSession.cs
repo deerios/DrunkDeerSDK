@@ -285,21 +285,34 @@ public partial class KeyboardSession : IDisposable, IAsyncDisposable
 	internal bool HasSideLight => (Model.Capabilities & Capabilities.SideLight) != 0;
 
 	/// <summary>
-	/// <see langword="true"/> if the connected keyboard persists Turbo mode via the FuncBlock gateway.
-	/// HighPrecision models (A75 Ultra, A75 Master, X60 Future) and always-KunPrecision
-	/// models (G65 m1/m2/m3, G60 v600) support this feature.
-	/// Standard-precision models with firmware-gated Kun do not because old firmware does
-	/// not respond to the FuncBlock gateway (0x55/0x05).
+	/// <see langword="true"/> if the connected keyboard supports Turbo mode.
 	/// </summary>
+	/// <remarks>
+	/// Turbo is switched on and off with the CommonConfig packet (0xB5), which every model
+	/// carrying this capability answers - the FuncBlock gateway is not involved. Boards that
+	/// also have the gateway (see <see cref="HasFuncBlock"/>) additionally persist the setting
+	/// into the stored function block, so it survives a replug; the rest hold it only for as
+	/// long as they stay powered.
+	/// </remarks>
 	internal bool HasTurboMode => (Model.Capabilities & Capabilities.TurboMode) != 0;
 
 	/// <summary>
 	/// <see langword="true"/> when the FuncBlock gateway (0x55/0x05 read, 0x06 write) is
-	/// supported by the connected keyboard. Requires <see cref="PrecisionMode"/> to be
-	/// <see cref="PrecisionMode.Kun"/> or <see cref="PrecisionMode.HighPrecision"/>. Standard-precision
-	/// models running below their Kun firmware threshold do not respond to these sub-commands.
+	/// supported by the connected keyboard. This is a property of the model: HighPrecision
+	/// models (A75 Ultra, A75 Master, X60 Future) and models that are always Kun-precision
+	/// (G65 m1/m2/m3, G60 v600) have the gateway; nothing else does.
 	/// </summary>
-	internal bool HasFuncBlock => _precisionMode != PrecisionMode.Standard;
+	/// <remarks>
+	/// Known limitation: models that reach Kun precision through a firmware threshold rather
+	/// than a declared capability - the base A75, A75 Pro, G75, G65, G60 - are treated as having
+	/// no gateway at any firmware. This used to be <c>_precisionMode != Standard</c>, on the
+	/// assumption that Kun precision and the gateway arrive together. They do not: an A75 owner
+	/// reports that no released A75 firmware answers these sub-commands. Kun precision is about
+	/// depth resolution and is left firmware-gated as before. Granting the gateway back to any
+	/// of these models needs a capture showing that model answering 0x55/0x05.
+	/// </remarks>
+	internal bool HasFuncBlock =>
+		(Model.Capabilities & (Capabilities.KunPrecision | Capabilities.HighPrecision)) != 0;
 
 	/// <summary>
 	/// Raised when the background poll loop detects that the keyboard has been disconnected.

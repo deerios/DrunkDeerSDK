@@ -22,6 +22,13 @@ models:
   # are not incorrectly placed in Kun mode. ISO users at fw 25-34 stay in standard
   # (safe; they just don't get the 0.01 mm resolution until fw >= 35).
   # Identity (11,1,1) is an alternate PID observed for the same ANSI hardware.
+  #
+  # kun_precision here means depth resolution and nothing else. It does NOT bring the
+  # FuncBlock gateway (0x55/0x05-0x06) with it: an A75 owner reports that no released
+  # A75 firmware answers those sub-commands, and the threshold above came from the
+  # vendor's web driver rather than from a capture of this board. Only models that list
+  # kun_precision or high_precision under `capabilities` get the gateway - see
+  # KeyboardSession.HasFuncBlock.
   a75:
     name: A75
     capabilities: [turbo_mode]

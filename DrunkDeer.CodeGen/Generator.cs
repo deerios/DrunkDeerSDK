@@ -296,9 +296,15 @@ internal static class Generator
 		if (m.Capabilities.Contains("turbo_mode"))      interfaces.Add("IHasTurboMode");
 		if (m.Capabilities.Contains("logo_light"))     interfaces.Add("IHasLogoLight");
 		if (m.Capabilities.Contains("side_light"))     interfaces.Add("IHasSideLight");
-		// kun_precision without any other FuncBlock-implying capability needs explicit IHasFuncBlock.
+		// The gateway belongs to models that declare Kun or HighPrecision as a capability. Models
+		// that only reach Kun through a firmware threshold are not on this list - see
+		// KeyboardSession.HasFuncBlock, which this must agree with. IHasHighPrecision, IHasLogoLight
+		// and IHasSideLight already extend IHasFuncBlock, so only add it when none of them applies.
 		bool hasFuncBlock = m.Capabilities.Contains("kun_precision") || m.Capabilities.Contains("high_precision");
-		if (hasFuncBlock && interfaces.Count == 0) interfaces.Add("IHasFuncBlock");
+		bool impliedByAnotherMarker = m.Capabilities.Contains("high_precision")
+			|| m.Capabilities.Contains("logo_light")
+			|| m.Capabilities.Contains("side_light");
+		if (hasFuncBlock && !impliedByAnotherMarker) interfaces.Add("IHasFuncBlock");
 		string interfacesExpr = interfaces.Count > 0 ? string.Join(", ", interfaces) : "";
 
 		return new ScriptObject

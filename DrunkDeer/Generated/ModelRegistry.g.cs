@@ -338,18 +338,18 @@ public sealed class G65Lite : IModelMarker
 {
     public static string Slug => ModelSlugs.G65Lite;
 }
-/// <summary>Model marker type for G65 m1. Implements: IHasTurboMode.</summary>
-public sealed class G65M1 : IModelMarker, IHasTurboMode
+/// <summary>Model marker type for G65 m1. Implements: IHasTurboMode, IHasFuncBlock.</summary>
+public sealed class G65M1 : IModelMarker, IHasTurboMode, IHasFuncBlock
 {
     public static string Slug => ModelSlugs.G65M1;
 }
-/// <summary>Model marker type for G65 m2. Implements: IHasTurboMode.</summary>
-public sealed class G65M2 : IModelMarker, IHasTurboMode
+/// <summary>Model marker type for G65 m2. Implements: IHasTurboMode, IHasFuncBlock.</summary>
+public sealed class G65M2 : IModelMarker, IHasTurboMode, IHasFuncBlock
 {
     public static string Slug => ModelSlugs.G65M2;
 }
-/// <summary>Model marker type for G65 m3. Implements: IHasTurboMode.</summary>
-public sealed class G65M3 : IModelMarker, IHasTurboMode
+/// <summary>Model marker type for G65 m3. Implements: IHasTurboMode, IHasFuncBlock.</summary>
+public sealed class G65M3 : IModelMarker, IHasTurboMode, IHasFuncBlock
 {
     public static string Slug => ModelSlugs.G65M3;
 }
@@ -358,8 +358,8 @@ public sealed class G60 : IModelMarker
 {
     public static string Slug => ModelSlugs.G60;
 }
-/// <summary>Model marker type for G60 v600. Implements: IHasTurboMode.</summary>
-public sealed class G60V600 : IModelMarker, IHasTurboMode
+/// <summary>Model marker type for G60 v600. Implements: IHasTurboMode, IHasFuncBlock.</summary>
+public sealed class G60V600 : IModelMarker, IHasTurboMode, IHasFuncBlock
 {
     public static string Slug => ModelSlugs.G60V600;
 }

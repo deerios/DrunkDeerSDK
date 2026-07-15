@@ -27,19 +27,20 @@ public partial class KeyboardSession :
 	/// <paramref name="capabilities"/>.
 	/// </summary>
 	/// <remarks>
-	/// This reads the model's static capability set. It is the right question for fixed hardware
-	/// facts (does this board have a logo LED?) and the wrong one for anything firmware-dependent:
-	/// notably, there is no flag for the FuncBlock gateway, because whether a keyboard answers it
-	/// depends on the firmware it is running. Use <see cref="TryGetFeatures{TFeatures}"/> rather
-	/// than inferring a feature from a flag.
+	/// This reads the model's static capability set, which is the right question for fixed hardware
+	/// facts: does this board have a logo LED, does it encode depths at 0.005 mm. It is the wrong
+	/// question for the FuncBlock gateway, which has no flag of its own and is instead implied by
+	/// <see cref="Capabilities.KunPrecision"/> or <see cref="Capabilities.HighPrecision"/>. Ask
+	/// <see cref="TryGetFeatures{TFeatures}"/> for that one rather than rebuilding the rule at the
+	/// call site.
 	/// </remarks>
 	public bool Supports(Capabilities capabilities) =>
 		(Model.Capabilities & capabilities) == capabilities;
 
-	// Maps a facade to the runtime condition that makes it real. Deliberately not generated: the
-	// conditions are capability data plus precision mode, so a new model in models.yaml flows
-	// through here with no change. Throws for a type that isn't a facade, so a typo can't quietly
-	// hand back a session that supports nothing.
+	// Maps a facade to the condition that makes it real. Deliberately not generated: every
+	// condition reads the model's capability data, so a new model in models.yaml flows through
+	// here with no change. Throws for a type that isn't a facade, so a typo can't quietly hand
+	// back a session that supports nothing.
 	private bool SupportsFeatures(Type featureType)
 	{
 		if (featureType == typeof(IProgrammableKeyboardFeatures)) return HasFuncBlock;
@@ -89,9 +90,8 @@ public partial class KeyboardSession :
 		if (TryGetFeatures<TFeatures>(out var features))
 			return features;
 
-		// Name the firmware too: for the programmable facade the model alone doesn't explain the
-		// refusal, and "A75 can't do this" would be actively misleading on a unit that could after
-		// a firmware update.
+		// The model is what settles every facade, but naming the variant, firmware and precision mode
+		// as well means a user pasting this message has described their whole keyboard.
 		throw new DrunkDeerCapabilityException(
 			$"{Model.Name} (variant {Variant}, fw {FirmwareVersion}, {PrecisionMode} precision) " +
 			$"does not support {typeof(TFeatures).Name}.");

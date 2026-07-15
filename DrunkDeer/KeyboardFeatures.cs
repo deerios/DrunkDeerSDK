@@ -23,10 +23,10 @@ public sealed class DrunkDeerCapabilityException : Exception
 /// <para>Obtain this from <see cref="KeyboardSession.GetFeatures{TFeatures}"/> or
 /// <see cref="KeyboardSession.TryGetFeatures{TFeatures}"/>; it is the runtime equivalent of the
 /// compile-time <see cref="IHasFuncBlock"/> gate on <see cref="KeyboardSession{TModel}"/>.</para>
-/// <para><b>Availability depends on firmware, not just the model.</b> The gateway answers only
-/// when the keyboard is running in Kun or HighPrecision mode. A base A75 acquires Kun precision at
-/// firmware 35, so the same model is programmable on one unit and not on another. This is why
-/// there is no <see cref="Capabilities"/> flag to test for it — ask the session.</para>
+/// <para><b>Availability is a property of the model.</b> The gateway is present on HighPrecision
+/// boards (A75 Ultra, A75 Master, X60 Future) and on boards that are always Kun-precision
+/// (G65 m1/m2/m3, G60 v600). Everything else — including the base A75 and A75 Pro on every
+/// released firmware — has no gateway at all, so this facade is simply absent there.</para>
 /// <para>Every method has an async twin producing identical wire traffic. Use the sync half on
 /// desktop and the async half on single-threaded hosts (WebAssembly); do not mix both on one
 /// session.</para>
@@ -349,9 +349,9 @@ public interface IHighPrecisionFeatures
 /// </summary>
 /// <remarks>
 /// Obtain this from <see cref="KeyboardSession.GetFeatures{TFeatures}"/>; it is the runtime
-/// equivalent of the compile-time <see cref="IHasLogoLight"/> gate. The zone is driven through the
-/// function block, so a model can advertise <see cref="Capabilities.LogoLight"/> and still refuse
-/// these calls if its firmware predates gateway support.
+/// equivalent of the compile-time <see cref="IHasLogoLight"/> gate. Availability is a fixed
+/// property of the model, so <see cref="KeyboardSession.Supports"/> with
+/// <see cref="Capabilities.LogoLight"/> answers the same question.
 /// </remarks>
 public interface ILogoLightFeatures
 {
@@ -381,8 +381,8 @@ public interface ILogoLightFeatures
 /// </summary>
 /// <remarks>
 /// Obtain this from <see cref="KeyboardSession.GetFeatures{TFeatures}"/>; it is the runtime
-/// equivalent of the compile-time <see cref="IHasSideLight"/> gate. As with the logo zone, the
-/// strip is driven through the function block.
+/// equivalent of the compile-time <see cref="IHasSideLight"/> gate. As with the logo zone,
+/// availability is a fixed property of the model.
 /// </remarks>
 public interface ISideLightFeatures
 {

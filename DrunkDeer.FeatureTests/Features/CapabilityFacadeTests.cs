@@ -13,8 +13,8 @@ namespace DrunkDeer.FeatureTests.Features;
 /// compiler ties the two together — the markers are generated from models.yaml, the facades are
 /// hand-written in SupportsFeatures — so adding a model or changing a capability can silently make
 /// them answer differently for the same keyboard. These tests fail when that happens.</para>
-/// <para>The two gates are deliberately not identical for the programmable facade: see
-/// <see cref="ProgrammableFacade_FollowsFirmware_NotTheModelMarker"/>.</para>
+/// <para>Every gate here is a fixed property of the model, so the two answers must match exactly
+/// for every model at every firmware.</para>
 /// </summary>
 [TestFixture]
 public class CapabilityFacadeTests
@@ -31,10 +31,14 @@ public class CapabilityFacadeTests
 	private static string SlugOf(Type markerType) =>
 		(string)markerType.GetProperty("Slug", BindingFlags.Public | BindingFlags.Static)!.GetValue(null)!;
 
-	// Firmware 255 puts every model in the best precision mode its hardware allows, so the model's
-	// static marker and the session's runtime answer are being asked the same question.
+	// Firmware 255 puts every model in the best precision mode its hardware allows. No gate below
+	// depends on firmware any more, but opening at the top of the range means a gate that regressed
+	// into reading the precision mode again would still show up here.
 	private static KeyboardSession OpenAtNewestFirmware(Type markerType) =>
-		new(new FakeKeyboardConnection(ModelRegistry.GetInfo(SlugOf(markerType)), firmwareVersion: 255));
+		OpenAt(markerType, 255);
+
+	private static KeyboardSession OpenAt(Type markerType, byte firmwareVersion) =>
+		new(new FakeKeyboardConnection(ModelRegistry.GetInfo(SlugOf(markerType)), firmwareVersion));
 
 	// TryGetFeatures is generic over the facade; the facade set under test is data here.
 	private static bool TryGetFeatures(KeyboardSession session, Type facade)
@@ -45,11 +49,12 @@ public class CapabilityFacadeTests
 		return (bool)method.Invoke(session, args)!;
 	}
 
-	// The facades whose availability is a fixed property of the model, each paired with the marker
-	// interface that makes the same claim at compile time. IProgrammableKeyboardFeatures is absent
-	// on purpose: it depends on firmware, so no marker can settle it.
+	// Every facade, paired with the marker interface that makes the same claim at compile time.
+	// The programmable facade belongs here like the rest: the FuncBlock gateway is a property of
+	// the model, not of the firmware it happens to be running.
 	private static readonly (Type Marker, Type Facade)[] StaticGates =
 	[
+		(typeof(IHasFuncBlock),     typeof(IProgrammableKeyboardFeatures)),
 		(typeof(IHasHighPrecision), typeof(IHighPrecisionFeatures)),
 		(typeof(IHasLogoLight),     typeof(ILogoLightFeatures)),
 		(typeof(IHasSideLight),     typeof(ISideLightFeatures)),
@@ -84,55 +89,83 @@ public class CapabilityFacadeTests
 	}
 
 	[Test]
-	public void ProgrammableFacade_IsGrantedOnEveryModelWhoseMarkerClaimsFuncBlock()
+	public void SomeModel_ClaimsTheFuncBlockGateway()
 	{
-		var claiming = MarkerTypes.Where(t => typeof(IHasFuncBlock).IsAssignableFrom(t)).ToArray();
+		// Guards the StaticGates row above: if codegen stopped emitting IHasFuncBlock entirely, the
+		// programmable half of the drift test would pass by agreeing that nothing supports anything.
+		Assert.That(MarkerTypes.Where(t => typeof(IHasFuncBlock).IsAssignableFrom(t)), Is.Not.Empty,
+			"No model marker implements IHasFuncBlock — codegen is broken.");
+	}
 
-		// Guard against the loop below passing because it never ran.
-		Assert.That(claiming, Is.Not.Empty, "No model marker implements IHasFuncBlock — codegen is broken.");
+	[TestCaseSource(nameof(AllModels))]
+	public void ProgrammableFacade_IgnoresFirmware(Type markerType)
+	{
+		// The gateway is model hardware, so no firmware may change the answer. This is the test that
+		// would have caught the old rule, which derived the gateway from the precision mode and so
+		// handed a base A75 a programmable surface the moment its firmware crossed the Kun threshold.
+		bool atOldest;
+		using (var oldest = OpenAt(markerType, 0))
+			atOldest = oldest.TryGetFeatures<IProgrammableKeyboardFeatures>(out _);
 
-		foreach (var markerType in claiming)
+		for (int fw = 1; fw <= 255; fw++)
 		{
-			using var session = OpenAtNewestFirmware(markerType);
-			Assert.That(session.TryGetFeatures<IProgrammableKeyboardFeatures>(out _), Is.True,
-				$"KeyboardSession<{markerType.Name}> exposes the programmable API at compile time " +
-				$"(its marker implements IHasFuncBlock), but the runtime facade refuses it even at " +
-				$"firmware 255. The compile-time gate is promising hardware that cannot deliver.");
+			using var session = OpenAt(markerType, (byte)fw);
+			Assert.That(session.TryGetFeatures<IProgrammableKeyboardFeatures>(out _), Is.EqualTo(atOldest),
+				$"{markerType.Name} answers differently for the programmable facade on firmware {fw} " +
+				$"than on firmware 0.");
 		}
 	}
 
 	[Test]
-	public void ProgrammableFacade_FollowsFirmware_NotTheModelMarker()
+	public void BaseA75_HasNoGateway_EvenAboveItsKunFirmwareThreshold()
 	{
-		// The base A75 acquires Kun precision — and with it the FuncBlock gateway — at firmware 35.
-		// Same model, same marker type, different answer. This is why the facade is the only honest
-		// way to ask, and why there is no Capabilities flag for FuncBlock.
+		// No released A75 firmware answers the gateway sub-commands (0x55/0x05-0x06) — reported by an
+		// A75 owner, and the reason the gateway no longer follows the precision mode. Kun precision
+		// itself stays firmware-gated: crossing the threshold changes the depth resolution and
+		// nothing else. This test pins the two apart, which is the whole point of the split.
 		var a75 = ModelRegistry.GetInfo(ModelSlugs.A75)!;
-		Assert.That(a75.KunPrecisionMinFirmware, Is.EqualTo((byte)35),
-			"This test is pinned to the A75's Kun firmware threshold.");
+		byte kunThreshold = a75.KunPrecisionMinFirmware!.Value;
 
-		using (var oldFirmware = new KeyboardSession(new FakeKeyboardConnection(a75, firmwareVersion: 34)))
-			Assert.That(oldFirmware.TryGetFeatures<IProgrammableKeyboardFeatures>(out _), Is.False,
-				"An A75 on firmware 34 runs in Standard precision and has no FuncBlock gateway.");
+		using var session = new KeyboardSession(new FakeKeyboardConnection(a75, firmwareVersion: 255));
 
-		using (var newFirmware = new KeyboardSession(new FakeKeyboardConnection(a75, firmwareVersion: 35)))
-			Assert.That(newFirmware.TryGetFeatures<IProgrammableKeyboardFeatures>(out _), Is.True,
-				"An A75 on firmware 35 runs in Kun precision and does have the FuncBlock gateway.");
+		Assert.Multiple(() =>
+		{
+			Assert.That(session.PrecisionMode, Is.EqualTo(PrecisionMode.Kun),
+				$"An A75 above firmware {kunThreshold} is still expected to run Kun precision.");
+			Assert.That(session.TryGetFeatures<IProgrammableKeyboardFeatures>(out _), Is.False,
+				"Kun precision must not imply the FuncBlock gateway on the base A75.");
+			Assert.That(typeof(IHasFuncBlock).IsAssignableFrom(typeof(A75)), Is.False,
+				"KeyboardSession<A75> must not offer the programmable API at compile time either.");
+		});
 	}
 
 	[Test]
-	public void ProgrammableFacade_GrantsMoreThanTheMarkers_OnFirmwareUpgradedModels()
+	public void AlwaysKunModels_HaveTheGateway()
 	{
-		// The G75 carries no capability flags, so its marker type implements nothing and
-		// KeyboardSession<G75> offers no programmable API at all. The same board on firmware 13+
-		// runs in Kun mode, and the runtime facade correctly offers it. The runtime gate being
-		// strictly more permissive than the compile-time one here is the point of the facades, not
-		// drift — don't "fix" the tests above into a strict equality.
-		Assert.That(typeof(IHasFuncBlock).IsAssignableFrom(typeof(G75)), Is.False);
+		// The other side of the split: G65 m1/m2/m3 and G60 v600 declare kun_precision as a
+		// capability rather than earning it from firmware, and they do have the gateway. Before the
+		// split these reached IHasFuncBlock only by way of IHasTurboMode extending it, which was an
+		// accident — turbo rides on CommonConfig, not the gateway.
+		foreach (var markerType in new[] { typeof(G65M1), typeof(G65M2), typeof(G65M3), typeof(G60V600) })
+		{
+			Assert.That(typeof(IHasFuncBlock).IsAssignableFrom(markerType), Is.True,
+				$"{markerType.Name} is always Kun-precision and must claim the gateway at compile time.");
 
-		using var session = new KeyboardSession(
-			new FakeKeyboardConnection(ModelRegistry.GetInfo(ModelSlugs.G75), firmwareVersion: 13));
-		Assert.That(session.TryGetFeatures<IProgrammableKeyboardFeatures>(out _), Is.True);
+			using var session = OpenAt(markerType, 1);
+			Assert.That(session.TryGetFeatures<IProgrammableKeyboardFeatures>(out _), Is.True,
+				$"{markerType.Name} must offer the programmable facade regardless of firmware.");
+		}
+	}
+
+	[Test]
+	public void TurboMarker_DoesNotImplyTheGateway()
+	{
+		// Turbo is sent with the CommonConfig packet (0xB5); only its persistence into the stored
+		// function block needs the gateway, and that step is skipped on boards without one. Wiring
+		// IHasTurboMode back under IHasFuncBlock would silently re-grant every A75 a programmable
+		// API its firmware refuses.
+		Assert.That(typeof(IHasFuncBlock).IsAssignableFrom(typeof(IHasTurboMode)), Is.False,
+			"IHasTurboMode must not extend IHasFuncBlock.");
 	}
 
 	[Test]
@@ -162,16 +195,16 @@ public class CapabilityFacadeTests
 	}
 
 	[Test]
-	public void GetFeatures_WhenUnsupported_ExplainsWhyWithModelAndFirmware()
+	public void GetFeatures_WhenUnsupported_IdentifiesTheKeyboardItRefusedFor()
 	{
-		// A75 on firmware 1: Standard precision, no gateway.
 		using var session = new KeyboardSession(
 			new FakeKeyboardConnection(ModelRegistry.GetInfo(ModelSlugs.A75), firmwareVersion: 1));
 
 		var ex = Assert.Throws<DrunkDeerCapabilityException>(
 			() => session.GetFeatures<IProgrammableKeyboardFeatures>());
 
-		// The firmware matters as much as the model: this same board is programmable on fw 35.
+		// The model is the reason for the refusal; the firmware and variant are there so a bug report
+		// pasting this message describes the whole keyboard rather than just its name.
 		Assert.That(ex!.Message, Does.Contain("A75"));
 		Assert.That(ex.Message, Does.Contain("fw 1"));
 		Assert.That(ex.Message, Does.Contain(nameof(IProgrammableKeyboardFeatures)));
