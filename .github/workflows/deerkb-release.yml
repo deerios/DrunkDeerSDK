@@ -35,7 +35,7 @@ jobs:
       - name: Publish self-contained single file
         shell: bash
         run: |
-          dotnet publish deerkb/src/deerkb.csproj -c Release -r ${{ matrix.rid }} \
+          dotnet publish DrunkDeer.Cli/src/DeerKB.csproj -c Release -r ${{ matrix.rid }} \
             --self-contained true -p:PublishSingleFile=true \
             -p:Version=${{ steps.ver.outputs.version }} \
             -o out --nologo
@@ -67,7 +67,7 @@ jobs:
         id: ver
         run: echo "version=${GITHUB_REF_NAME#deerkb-v}" >> "$GITHUB_OUTPUT"
       - name: Pack
-        run: dotnet pack deerkb/src/deerkb.csproj -c Release -p:Version=${{ steps.ver.outputs.version }} -o dist --nologo
+        run: dotnet pack DrunkDeer.Cli/src/DeerKB.csproj -c Release -p:Version=${{ steps.ver.outputs.version }} -o dist --nologo
       - uses: actions/upload-artifact@v4
         with:
           name: deerkb-nupkg
