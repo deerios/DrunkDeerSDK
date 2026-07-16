@@ -3,6 +3,7 @@
 @inject KeyboardService Keyboard
 @inject KeyboardStore Store
 @inject SelectionStore Selection
+@inject SettingsService Settings
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
 @implements IDisposable
@@ -51,8 +52,8 @@
         @if (!Keyboard.DepthsAreKnown)
         {
             <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
-                This board can't report its current settings, and the firmware only accepts
-                whole-board writes — so applying also sets every key you didn't select.
+                Please note that this keyboard does not support reading back the current configuration on the device.  
+                Applying your changes will reset any unchanged keys back to their default values.
             </MudAlert>
             <MudNumericField T="float" @bind-Value="_baselineMm" Label="All other keys"
                              Min="@Keyboard.MinDepthMm" Max="@Keyboard.MaxDepthMm" Step="0.05f"
@@ -245,7 +246,8 @@
 
         // Same rule as the actuation write: only the first one of a session touches keys the user
         // never selected, so only that one has to be confirmed.
-        if (!Keyboard.SensitivityIsKnown && !await ConfirmFirstSensitivityWriteAsync(keys.Length))
+        if (!Keyboard.SensitivityIsKnown && !Settings.Current.SkipWriteConfirmations
+            && !await ConfirmFirstSensitivityWriteAsync(keys.Length))
             return;
 
         _busy = true;
@@ -290,7 +292,8 @@
 
         // Only the first write of a session needs confirming: it is the one that writes a value
         // to keys the user never touched. After that the panel leaves them alone.
-        if (!Keyboard.DepthsAreKnown && !await ConfirmFirstWriteAsync(keys.Length))
+        if (!Keyboard.DepthsAreKnown && !Settings.Current.SkipWriteConfirmations
+            && !await ConfirmFirstWriteAsync(keys.Length))
             return;
 
         _busy = true;

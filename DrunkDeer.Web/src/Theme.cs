@@ -90,16 +90,14 @@ public static class Theme
             ActionDisabled = Hex(Gray800),
             ActionDisabledBackground = Hex(Gray800),
 
-            // Zits draws dark-mode edges as translucent white rather than a step on the grey ramp,
-            // so a border reads the same over a card as over the background.
             LinesDefault = Border,
             LinesInputs = Input,
             Divider = Border,
             DividerLight = Border,
             TableLines = Border,
+            
+            Info = Accent(accentHue),
 
-            // Zits' own green/amber/red brand hues. Status has to stay fixed: a warning that took
-            // its colour from the keyboard would stop meaning "warning".
             Success = Oklch2Srgb.ToSrgb(new Oklch(0.723, 0.219, 149.579)).ToHex(),
             Warning = Oklch2Srgb.ToSrgb(new Oklch(0.828, 0.189, 84.429)).ToHex(),
             Error = Oklch2Srgb.ToSrgb(new Oklch(0.637, 0.237, 25.331)).ToHex(),

@@ -1,17 +1,19 @@
 @page "/"
 @inject KeyboardService Keyboard
 @inject KeyboardStore Store
+@inject SettingsService Settings
+@inject SessionRestore Restore
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 
-<PageTitle>Connect — DrunkDeer</PageTitle>
+<PageTitle>Connect to DrunkDeer keyboard</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Small" Class="mt-8">
     <div class="d-flex flex-column align-center mb-8">
         <MudIcon Icon="@Icons.Material.Filled.Keyboard" Size="Size.Large" Style="font-size:4rem;" Color="Color.Primary" />
         <MudText Typo="Typo.h4" Class="mt-2">DrunkDeer Web</MudText>
         <MudText Typo="Typo.body1" Color="Color.Secondary" Align="Align.Center">
-            Configure your analog keyboard from the browser — actuation, rapid trigger, and lighting.
+            Configure your analog keyboard from the browser - actuation, rapid trigger, and lighting.
         </MudText>
     </div>
 
@@ -80,7 +82,7 @@
             {
                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-3 d-block">
                     Your browser will ask which keyboard to allow access to. Nothing you configure
-                    leaves your machine — this page talks to the keyboard directly.
+                    leaves your machine - this page talks to the keyboard directly.
                 </MudText>
             }
         </MudPaper>
@@ -99,6 +101,39 @@
         if (!firstRender) return;
         _hidSupported = await Keyboard.IsWebHidSupportedAsync();
         StateHasChanged();
+
+        await AutoConnectAsync();
+    }
+
+    /// <summary>
+    /// Opens the keyboard the browser already has permission for, if the user asked us to, and
+    /// carries on to the dashboard.
+    /// </summary>
+    /// <remarks>
+    /// Run from here rather than from the app's startup because this is the page you land on, and
+    /// the one you come back to when it doesn't work out. Nothing is reported when it finds no
+    /// keyboard: not finding one is what happens the first time, every time, for anyone who hasn't
+    /// granted permission — and the answer to it is this page, which is already on screen.
+    /// </remarks>
+    private async Task AutoConnectAsync()
+    {
+        // HasTriedReconnecting is per page load, not per render: disconnecting brings you back
+        // here, and reopening the board someone had just put down would make Disconnect look broken.
+        if (_hidSupported != true || !Settings.Current.AutoConnect
+            || Keyboard.HasTriedReconnecting || Store.IsConnected) return;
+
+        _busy = true;
+        StateHasChanged();
+        try
+        {
+            if (await Keyboard.ReconnectWebHidAsync())
+                await OpenDashboardAsync();
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
     }
 
     private async Task ConnectDemo()
@@ -107,7 +142,7 @@
         try
         {
             await Keyboard.ConnectDemoAsync();
-            Nav.NavigateTo("dashboard");
+            await OpenDashboardAsync();
         }
         catch (Exception ex)
         {
@@ -127,7 +162,7 @@
             // False means the user closed the picker without choosing — they know they did that,
             // so there's nothing to tell them.
             if (await Keyboard.ConnectWebHidAsync())
-                Nav.NavigateTo("dashboard");
+                await OpenDashboardAsync();
         }
         catch (Exception ex)
         {
@@ -137,6 +172,34 @@
         {
             _busy = false;
         }
+    }
+
+    /// <summary>
+    /// Does whatever the startup setting asks of a newly connected board, then shows it.
+    /// </summary>
+    /// <remarks>
+    /// Every way in goes through here — the picker, demo mode, and reconnecting — because "when the
+    /// keyboard connects, put this on it" is what the setting says, and a board that got its profile
+    /// only when the app happened to open itself would be a stranger rule to explain.
+    /// <para>
+    /// A restore that fails doesn't hold up the dashboard. The board is connected either way, and
+    /// the settings it didn't get are ones the user can apply from the Profiles page — which is a
+    /// good deal easier to do from inside the app than from this page.
+    /// </para>
+    /// </remarks>
+    private async Task OpenDashboardAsync()
+    {
+        try
+        {
+            if (await Restore.ApplyStartupAsync() is { } done)
+                Snackbar.Add(done, Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+
+        Nav.NavigateTo("dashboard");
     }
 
     private async Task Disconnect() => await Keyboard.DisconnectAsync();

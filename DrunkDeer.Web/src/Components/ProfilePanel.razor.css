@@ -9,7 +9,8 @@
 }
 
 .summary.omitted {
-	color: var(--mud-palette-text-disabled);
+	color: var(--mud-palette-text-secondary);
+	font-style: italic;
 }
 
 /* The import control: a label styled like MudBlazor's small text button, wrapping a real file

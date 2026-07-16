@@ -106,7 +106,50 @@ public sealed class KeyboardService : IAsyncDisposable
     /// <see langword="true"/> if a keyboard was connected; <see langword="false"/> if the user
     /// dismissed the picker without choosing, which is a normal thing to do and not an error.
     /// </returns>
-    public async Task<bool> ConnectWebHidAsync(CancellationToken ct = default)
+    public Task<bool> ConnectWebHidAsync(CancellationToken ct = default) => OpenWebHidAsync(prompt: true, ct);
+
+    /// <summary>
+    /// Whether <see cref="ReconnectWebHidAsync"/> has already run in this page's lifetime.
+    /// </summary>
+    /// <remarks>
+    /// Reconnecting at startup is meant to happen once, when the app opens. The Connect page is
+    /// where it runs from, and that page is returned to — by disconnecting, or by the keyboard being
+    /// unplugged — so without this the app would immediately reopen the board the user had just put
+    /// down.
+    /// </remarks>
+    public bool HasTriedReconnecting { get; private set; }
+
+    /// <summary>
+    /// Silently reopens a keyboard this browser already has permission for, if one is plugged in.
+    /// </summary>
+    /// <remarks>
+    /// Needs no user gesture — the browser only hands back devices the user has already granted
+    /// through its own prompt — so this is what <see cref="AppSettings.AutoConnect"/> runs at
+    /// startup. Nothing about it is a failure worth reporting: there being no keyboard is the
+    /// ordinary outcome, so it swallows what it finds and leaves the user on the Connect page,
+    /// where they would have been anyway.
+    /// </remarks>
+    /// <returns><see langword="true"/> if a keyboard is now connected.</returns>
+    public async Task<bool> ReconnectWebHidAsync(CancellationToken ct = default)
+    {
+        HasTriedReconnecting = true;
+        try
+        {
+            return await OpenWebHidAsync(prompt: false, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // A granted device that no longer answers the handshake is the realistic case — a board
+            // mid-firmware-update, or a hub that hasn't settled. The user never asked for this
+            // attempt, so it ends where it started rather than as an error on their screen.
+            _loggerFactory.CreateLogger<KeyboardService>()
+                .LogDebug(ex, "Couldn't reconnect to a previously granted keyboard.");
+            _store.SetDisconnected();
+            return false;
+        }
+    }
+
+    private async Task<bool> OpenWebHidAsync(bool prompt, CancellationToken ct)
     {
         if (_session is not null) await DisconnectAsync().ConfigureAwait(false);
 
@@ -116,7 +159,9 @@ public sealed class KeyboardService : IAsyncDisposable
         WebHidKeyboardConnection? connection = null;
         try
         {
-            connection = await WebHidKeyboardConnection.RequestAsync(module, _diagnostics, ct).ConfigureAwait(false);
+            connection = prompt
+                ? await WebHidKeyboardConnection.RequestAsync(module, _diagnostics, ct).ConfigureAwait(false)
+                : await WebHidKeyboardConnection.ReopenKnownAsync(module, _diagnostics, ct).ConfigureAwait(false);
             if (connection is null)
             {
                 _store.SetDisconnected();
@@ -456,6 +501,58 @@ public sealed class KeyboardService : IAsyncDisposable
         BacklightOff = true;
         LightingChanged?.Invoke();
     }
+
+    // ── Lighting restore points ──────────────────────────────────────────────
+
+    /// <summary>
+    /// The board's lighting as this session last left it, enough to put back afterwards.
+    /// </summary>
+    /// <param name="Theme">The per-key colours to rewrite, or null if this session never set any.</param>
+    /// <param name="Mode">The firmware animation to restart, or null if none was running.</param>
+    /// <param name="Off">Whether the backlight was switched off.</param>
+    /// <remarks>
+    /// All three can be absent at once, and that is the interesting case rather than an edge one:
+    /// it means the lighting on the board was never set from here, so this session genuinely does
+    /// not know what it looked like — the A75 cannot report its lighting back. See
+    /// <see cref="CanRestore"/>; a caller that shows the user a "temporarily" needs to know when
+    /// it can't honour the "temporarily".
+    /// </remarks>
+    public sealed record LightingRestorePoint(KeyboardTheme? Theme, LightingMode? Mode, bool Off)
+    {
+        /// <summary>Whether restoring this actually puts the board back, rather than leaving it as it is.</summary>
+        public bool CanRestore => Theme is not null || Mode is not null || Off;
+    }
+
+    /// <summary>Captures the board's current lighting so it can be put back after a temporary change.</summary>
+    public LightingRestorePoint CaptureLighting()
+    {
+        var session = _session ?? throw new InvalidOperationException("Not connected.");
+
+        // Order matters: these are mutually exclusive on the board, and each one makes the ones
+        // below it stale. A running animation replaced the per-key colours, and the backlight being
+        // off outranks whatever colours are sitting underneath it.
+        if (ActiveMode is { } mode) return new(null, mode, false);
+        if (BacklightOff) return new(null, null, true);
+        return new(ColorsAreKnown ? CaptureTheme(session) : null, null, false);
+    }
+
+    /// <summary>Puts back the lighting <see cref="CaptureLighting"/> recorded. A point with nothing in it is a no-op.</summary>
+    public async Task RestoreLightingAsync(LightingRestorePoint point, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(point);
+        if (_session is null) return;
+
+        if (point.Mode is { } mode) await SetLightingModeAsync(mode, LastBrightness, DefaultSpeed, ct).ConfigureAwait(false);
+        else if (point.Off) await TurnLightingOffAsync(ct).ConfigureAwait(false);
+        else if (point.Theme is { } theme) await ApplyProfileAsync(new KeyboardProfile { Theme = theme }, ct).ConfigureAwait(false);
+        // Nothing captured means nothing is known to put back, and inventing a lighting state to
+        // "restore" the board to would be worse than leaving it alone. The caller warns the user.
+    }
+
+    // The firmware carries an animation speed the session doesn't keep and no write here has ever
+    // set, so a restarted animation gets the middle of the 0-9 range rather than a guess dressed
+    // up as the user's setting.
+    private const byte DefaultSpeed = 5;
 
     // ── Profiles ─────────────────────────────────────────────────────────────
 

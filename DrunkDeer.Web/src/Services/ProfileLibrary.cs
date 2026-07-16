@@ -67,6 +67,35 @@ public sealed partial class ProfileLibrary : IAsyncDisposable
         return json is null ? null : Parse(json, $"The saved profile '{name}'");
     }
 
+    /// <summary>
+    /// Renames the profile saved as <paramref name="from"/> to <paramref name="to"/>, replacing
+    /// anything already saved under the new name.
+    /// </summary>
+    /// <returns><see langword="false"/> if there was nothing saved as <paramref name="from"/>.</returns>
+    /// <exception cref="InvalidOperationException">The browser refused to store it (usually a full origin).</exception>
+    public async Task<bool> RenameAsync(string from, string to)
+    {
+        Validate(from);
+        Validate(to);
+        // Not an ignore-case comparison: names differing only in case are different profiles here
+        // (localStorage keys are case-sensitive), so "ember" -> "Ember" is a real rename and has to
+        // do the work. Only a rename to the identical name is the no-op.
+        if (string.Equals(from, to, StringComparison.Ordinal)) return true;
+
+        var module = await ModuleAsync().ConfigureAwait(false);
+        var json = await module.InvokeAsync<string?>("read", from).ConfigureAwait(false);
+        if (json is null) return false;
+
+        // Written before the old one is dropped, so a rename that fails half way — a full origin is
+        // the realistic way — leaves the profile where it was rather than losing it.
+        var error = await module.InvokeAsync<string?>("write", to, json).ConfigureAwait(false);
+        if (error is not null)
+            throw new InvalidOperationException($"The browser wouldn't save this profile ({error}).");
+
+        await module.InvokeVoidAsync("remove", from).ConfigureAwait(false);
+        return true;
+    }
+
     /// <summary>Deletes the profile saved as <paramref name="name"/>. Deleting a missing one is not an error.</summary>
     public async Task DeleteAsync(string name)
     {

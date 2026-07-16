@@ -101,8 +101,33 @@ public sealed class WebHidKeyboardConnection : IKeyboardConnectionAsync, IAsyncD
 	/// <exception cref="DrunkDeerDeviceNotFoundException">
 	/// A device was chosen, but it never completed the handshake.
 	/// </exception>
-	public static async Task<WebHidKeyboardConnection?> RequestAsync(
-		IJSObjectReference module, DiagnosticsLog trace, CancellationToken ct = default)
+	public static Task<WebHidKeyboardConnection?> RequestAsync(
+		IJSObjectReference module, DiagnosticsLog trace, CancellationToken ct = default) =>
+		OpenAsync("requestDevice", module, trace, ct);
+
+	/// <summary>
+	/// Opens a keyboard this browser has already been given permission for, without prompting, and
+	/// runs the identity handshake on it.
+	/// </summary>
+	/// <remarks>
+	/// Unlike <see cref="RequestAsync"/> this needs no user gesture, because it can only reach a
+	/// device the user has already picked from the browser's own permission prompt. That is what
+	/// makes reconnecting at startup safe to do unasked.
+	/// </remarks>
+	/// <returns>
+	/// The open connection, or <see langword="null"/> if there is no granted keyboard plugged in —
+	/// the ordinary case, and not a failure.
+	/// </returns>
+	public static Task<WebHidKeyboardConnection?> ReopenKnownAsync(
+		IJSObjectReference module, DiagnosticsLog trace, CancellationToken ct = default) =>
+		OpenAsync("openKnownDevice", module, trace, ct);
+
+	/// <summary>
+	/// The half both ways in share: whichever entry point found the device, what happens to it
+	/// afterwards — attach, handshake, or close on the way out — is identical.
+	/// </summary>
+	private static async Task<WebHidKeyboardConnection?> OpenAsync(
+		string entryPoint, IJSObjectReference module, DiagnosticsLog trace, CancellationToken ct)
 	{
 		var filters = ModelRegistry.DiscoveryPairs
 			.Select(p => new { vendorId = p.Vid, productId = p.Pid })
@@ -111,8 +136,8 @@ public sealed class WebHidKeyboardConnection : IKeyboardConnectionAsync, IAsyncD
 		// The [filters] wrapper is load-bearing: InvokeAsync takes params object?[], and an array
 		// passed bare would be spread into one JS argument per filter instead of arriving as the
 		// single array requestDevice expects.
-		var device = await module.InvokeAsync<WebHidDevice?>("requestDevice", ct, [filters]).ConfigureAwait(false);
-		if (device is null) return null; // picker dismissed
+		var device = await module.InvokeAsync<WebHidDevice?>(entryPoint, ct, [filters]).ConfigureAwait(false);
+		if (device is null) return null; // picker dismissed, or nothing already granted
 
 		var connection = new WebHidKeyboardConnection(module, device.Handle, device.Capacity, device.ProductName);
 		try

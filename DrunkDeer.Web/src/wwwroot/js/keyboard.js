@@ -17,10 +17,39 @@ const boards = new WeakMap();
 // A drag shorter than this (in px) is a click, not a marquee.
 const DRAG_THRESHOLD = 4;
 
+// Travel below this (in mm) is drawn as a key at rest. Hall-effect switches never report a clean
+// zero — a resting key wanders by a few hundredths of a millimetre as the sensor picks up noise —
+// and without a floor the whole board shimmers because every one of those wanders is a changed
+// value the loop faithfully redraws. Small enough that a real press crosses it on the way down
+// long before it reaches any usable actuation point.
+const REST_DEADZONE_MM = 0.5;
+
 // Mirrors DrunkDeer.Web.Services.SelectionMode.
 const MODE_REPLACE = 'Replace';
 const MODE_ADD = 'Add';
 const MODE_TOGGLE = 'Toggle';
+
+// The room around the board is part of the selection surface: a drag there rubber-bands the keys
+// it sweeps, and a plain click there means "I'm done with these keys" and clears. Anything that
+// reads the selection has to be exempt from both, or the click would empty the selection before the
+// one it belongs to ever lands and the Apply buttons in the side panels would act on nothing. The
+// panels opt out by marking themselves data-keeps-selection.
+//
+// MudBlazor's overlays are exempt by class rather than by attribute because they don't render
+// inside the panel that opened them — popovers, dialogs and the colour picker's dropdown are all
+// stamped at the body root, so a click in one is "away from the board" by DOM position while being
+// the opposite in intent.
+//
+// The board itself is not listed: it is recognised by identity (the element this module was
+// attached to) rather than by class, so a page showing both a live board and a static one — the
+// gallery's thumbnails are .board too — can never confuse the two.
+const KEEPS_SELECTION = [
+    '[data-keeps-selection]',
+    '.mud-popover',
+    '.mud-overlay',
+    '.mud-dialog',
+    '.mud-snackbar',
+].join(',');
 
 function modeFor(ev) {
     if (ev.ctrlKey || ev.metaKey) return MODE_TOGGLE;
@@ -30,9 +59,13 @@ function modeFor(ev) {
 
 // Attach the rAF loop + resize handling to a board element.
 //   boardEl   the .board container Blazor rendered
-//   dotNetRef DotNetObjectReference exposing SampleHeights() -> float[] (by slot)
+//   dotNetRef DotNetObjectReference exposing SampleHeights() -> float[] (by slot) and
+//             SelectSlots(). Null puts the board in static mode: a picture of a theme with no
+//             live keyboard behind it (the gallery thumbnails), so there is nothing to sample and
+//             nothing to select. Sizing still applies — that is the whole reason it attaches.
 //   maxDepth  full-travel depth in mm (session.MaxDepthMm), maps depth -> 0..1
-//   actDepth  actuation depth in mm; a key past this reads as "pressed"
+//   actDepth  fallback actuation depth in mm, used only for keys with no marker of their own;
+//             normally a key reads as "pressed" past its own --act marker (see setActuation)
 export function attach(boardEl, dotNetRef, maxDepth, actDepth) {
     detach(boardEl);
 
@@ -47,6 +80,10 @@ export function attach(boardEl, dotNetRef, maxDepth, actDepth) {
             el,
             last: -1,
             pressed: false,
+            // Where this key's actuation marker sits, as a fraction of full travel — the same
+            // number the CSS draws the line from, so the fill lights up exactly as it reaches it.
+            // Blazor stamps it inline; setActuation keeps it current after that.
+            act: u('--act'),
             // Primary rect only: the secondary leg of an ISO Enter is a small sliver, and
             // ignoring it costs nothing a user would notice when marquee-selecting.
             rect: { x: u('--kx'), y: u('--ky'), w: u('--kw'), h: u('--kh') },
@@ -84,13 +121,20 @@ export function attach(boardEl, dotNetRef, maxDepth, actDepth) {
             for (let slot = 0; slot < heights.length; slot++) {
                 const k = keys[slot];
                 if (!k) continue;
-                const mm = heights[slot];
+                // Snapped to rest before the comparison, not after: the point is that a jittering
+                // resting key produces the same value every frame and drops out here.
+                const mm = heights[slot] < REST_DEADZONE_MM ? 0 : heights[slot];
                 if (mm === k.last) continue;
                 k.last = mm;
                 const frac = mm <= 0 ? 0 : (mm >= state.maxDepth ? 1 : mm * inv);
                 k.el.style.setProperty('--depth', frac.toFixed(3));
                 k.el.style.setProperty('--glow', frac.toFixed(3));
-                const pressed = mm >= state.actDepth;
+                // Against the key's own marker, so the fill turns bright as its leading edge
+                // reaches the line and not a moment before: the two are the same claim about the
+                // same key, and a bar that lights up short of its own marker just looks broken.
+                // Only a key with no marker falls back to the board-wide depth.
+                const act = k.act > 0 ? k.act : state.actDepth * inv;
+                const pressed = frac >= act;
                 if (pressed !== k.pressed) {
                     k.pressed = pressed;
                     k.el.classList.toggle('pressed', pressed);
@@ -100,16 +144,27 @@ export function attach(boardEl, dotNetRef, maxDepth, actDepth) {
         state.rafId = requestAnimationFrame(frame);
     };
 
-    attachSelection(state);
-
     boards.set(boardEl, state);
+
+    // A static board is done here: it has been measured, and the colours Blazor rendered inline
+    // are the whole picture. Starting a rAF loop or a gesture handler for it would only burn a
+    // frame budget per thumbnail on a gallery page that shows a dozen of them.
+    if (!dotNetRef) return;
+
+    attachSelection(state);
     state.rafId = requestAnimationFrame(frame);
 }
 
-// Pointer gestures: click a key to select it, drag across the board to marquee-select,
-// click empty board to clear. Shift adds, ctrl/cmd toggles. The gesture reports the hit
-// slots to .NET, which owns the selection; the resulting classes come back via
-// setSelection() so the store stays the single source of truth.
+// Pointer gestures: click a key to select it, drag to marquee-select, click empty space to clear.
+// Shift adds, ctrl/cmd toggles. The gesture reports the hit slots to .NET, which owns the
+// selection; the resulting classes come back via setSelection() so the store stays the single
+// source of truth.
+//
+// The gesture is bound to the document rather than to the board, so a drag can start in the room
+// around the board and sweep into it. That matters because a 75% layout is very nearly all keys —
+// there is almost nowhere *on* the board to begin a drag that doesn't land on a key first — so the
+// margins are where a user actually aims to rubber-band a row or a corner. Coordinates are in board
+// units throughout and are simply negative out there, so nothing else has to know about it.
 function attachSelection(state) {
     const { boardEl, keys } = state;
 
@@ -145,14 +200,38 @@ function attachSelection(state) {
 
     let drag = null;
 
+    // The board sets user-select:none, but the room around it is ordinary prose. Without this a
+    // drag that starts out there rubber-bands a text selection across the page alongside the keys.
+    // Registered only for the life of a drag, so an ordinary click or double-click on that text
+    // still selects a word the way it should.
+    const blockSelect = ev => ev.preventDefault();
+
+    const endDrag = () => {
+        marquee.hidden = true;
+        document.removeEventListener('selectstart', blockSelect);
+        drag = null;
+    };
+
     const onPointerDown = ev => {
         if (ev.button !== 0) return;
+        // A press on a scrollbar arrives as a pointerdown on the element being scrolled, so without
+        // this a scrollbar drag would rubber-band the board sitting behind it.
+        if (ev.clientX >= document.documentElement.clientWidth ||
+            ev.clientY >= document.documentElement.clientHeight) return;
+        if (!boardEl.contains(ev.target) && ev.target.closest?.(KEEPS_SELECTION)) return;
+
         drag = { start: unitsAt(ev), moved: false, mode: modeFor(ev) };
-        boardEl.setPointerCapture(ev.pointerId);
+        document.addEventListener('selectstart', blockSelect);
     };
 
     const onPointerMove = ev => {
         if (!drag) return;
+        // The button came up somewhere we were never told about — over browser chrome, or another
+        // window entirely. Drop the drag rather than carry a stale marquee around the page.
+        if (!(ev.buttons & 1)) {
+            endDrag();
+            return;
+        }
         const at = unitsAt(ev);
         const u = parseFloat(boardEl.style.getPropertyValue('--u')) || 1;
         if (!drag.moved) {
@@ -170,21 +249,24 @@ function attachSelection(state) {
         const hits = drag.moved
             ? hitsIn(drag.start, at)
             : hitsIn(drag.start, drag.start); // a click is a zero-area marquee
-        marquee.hidden = true;
 
-        // A plain click on empty board clears; a modified one leaves the selection alone
-        // (the user is mid-refinement and just missed).
+        // A plain click that hit nothing means "none of them" and clears — whether it landed on the
+        // bare board or in the room around it. A modified one leaves the selection alone: the user
+        // is mid-refinement and has simply missed.
         const isEmptyClick = hits.length === 0 && !drag.moved;
         const mode = drag.mode;
-        drag = null;
+        endDrag();
         if (isEmptyClick && mode !== MODE_REPLACE) return;
 
         state.dotNetRef.invokeMethodAsync('SelectSlots', hits, mode);
     };
 
+    // Something took the gesture over — off the board that means the page is scrolling under a
+    // touch drag, since only the board itself sets touch-action:none. The user asked to scroll, not
+    // to select, so the half-drawn marquee is abandoned rather than committed.
+    const onPointerCancel = () => endDrag();
+
     const onKeyDown = ev => {
-        // Clicking bare board also clears, but the only uncovered space on a 75% layout is
-        // the slivers between the F-key groups — too small to be the only way out.
         if (ev.key === 'Escape') {
             ev.preventDefault();
             state.dotNetRef.invokeMethodAsync('SelectSlots', [], MODE_REPLACE);
@@ -198,16 +280,20 @@ function attachSelection(state) {
         state.dotNetRef.invokeMethodAsync('SelectSlots', [slot], modeFor(ev));
     };
 
-    boardEl.addEventListener('pointerdown', onPointerDown);
-    boardEl.addEventListener('pointermove', onPointerMove);
-    boardEl.addEventListener('pointerup', onPointerUp);
-    boardEl.addEventListener('pointercancel', onPointerUp);
+    // On the document, not the board: the whole point is to hear about drags that never touch it.
+    // No pointer capture — capturing retargets the compatibility mouse events too, which would
+    // rob every button outside the board of its click.
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerCancel);
     boardEl.addEventListener('keydown', onKeyDown);
     state.detachSelection = () => {
-        boardEl.removeEventListener('pointerdown', onPointerDown);
-        boardEl.removeEventListener('pointermove', onPointerMove);
-        boardEl.removeEventListener('pointerup', onPointerUp);
-        boardEl.removeEventListener('pointercancel', onPointerUp);
+        document.removeEventListener('pointerdown', onPointerDown);
+        document.removeEventListener('pointermove', onPointerMove);
+        document.removeEventListener('pointerup', onPointerUp);
+        document.removeEventListener('pointercancel', onPointerCancel);
+        document.removeEventListener('selectstart', blockSelect);
         boardEl.removeEventListener('keydown', onKeyDown);
     };
 }
@@ -255,6 +341,11 @@ export function setActuation(boardEl, entries) {
         if (!k) continue;
         k.el.style.setProperty('--act', act);
         k.el.style.setProperty('--actc', `var(--act-${kind})`);
+        // The marker is also the point the fill lights up at, so moving it can change whether a
+        // key that hasn't moved is pressed — dragging the slider under a held-down finger. Clearing
+        // `last` makes the next frame re-decide rather than skip the key as unchanged.
+        k.act = parseFloat(act) || 0;
+        k.last = -1;
     }
 }
 

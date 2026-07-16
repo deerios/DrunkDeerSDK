@@ -79,7 +79,35 @@ export async function requestDevice(filters) {
             `carries at least ${MIN_CAPACITY} bytes each way). It may not be a configurable DrunkDeer keyboard.`);
     }
 
-    const { device, capacity } = picked;
+    return await open(picked);
+}
+
+// Opens a keyboard this origin has already been granted, without prompting and without a user
+// gesture — getDevices only ever returns devices the user picked from Chrome's own prompt at some
+// earlier point, so this can't reach anything they haven't already allowed.
+//
+// Returns null when there's nothing to open: no permission granted yet, nothing plugged in, or the
+// granted device is gone. All three are ordinary, so none of them throws — the caller falls back to
+// asking.
+export async function openKnownDevice(filters) {
+    if (!isSupported()) return null;
+
+    const granted = await navigator.hid.getDevices();
+    if (!granted || granted.length === 0) return null;
+
+    // getDevices ignores the filters requestDevice takes, so the match is ours to make. Without it
+    // an unrelated HID device this origin happens to have been granted could be opened as though it
+    // were a keyboard.
+    const pairs = filters ?? [];
+    const matching = granted.filter(d => pairs.some(f => f.vendorId === d.vendorId && f.productId === d.productId));
+
+    const picked = pickCommandInterface(matching);
+    // A match with no command interface is not an error here, unlike in requestDevice: nobody chose
+    // this device just now, so there is nobody to tell.
+    return picked ? await open(picked) : null;
+}
+
+async function open({ device, capacity }) {
     if (!device.opened) await device.open();
 
     const handle = nextHandle++;

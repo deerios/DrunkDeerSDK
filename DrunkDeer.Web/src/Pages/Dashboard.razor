@@ -5,7 +5,7 @@
 @inject NavigationManager Nav
 @implements IDisposable
 
-<PageTitle>Dashboard — DrunkDeer</PageTitle>
+<PageTitle>Dashboard</PageTitle>
 
 @if (!Store.IsConnected)
 {
@@ -14,7 +14,6 @@
 else
 {
     <div class="d-flex align-center mb-4">
-        <MudText Typo="Typo.h5">Live travel</MudText>
         <MudSpacer />
         @* Only the simulator can be driven from here. On real hardware the keyboard is the input,
            so these would be buttons that quietly do nothing. *@
@@ -27,27 +26,30 @@ else
         }
     </div>
 
+    @* no-select on the tiles: they are a readout, and the room they sit in is part of the board's
+       selection surface — a drag that begins here rubber-bands the keys below, and a text selection
+       dragged out across the labels on the way is never what was meant. *@
     <MudGrid Class="mb-4">
         <MudItem xs="6" sm="3">
-            <MudPaper Class="pa-3" Elevation="1">
+            <MudPaper Class="pa-3 no-select" Elevation="1">
                 <MudText Typo="Typo.caption" Color="Color.Secondary">Model</MudText>
                 <MudText Typo="Typo.h6">@Store.ModelName</MudText>
             </MudPaper>
         </MudItem>
         <MudItem xs="6" sm="3">
-            <MudPaper Class="pa-3" Elevation="1">
+            <MudPaper Class="pa-3 no-select" Elevation="1">
                 <MudText Typo="Typo.caption" Color="Color.Secondary">Firmware</MudText>
                 <MudText Typo="Typo.h6">v@(Store.FirmwareVersion)</MudText>
             </MudPaper>
         </MudItem>
         <MudItem xs="6" sm="3">
-            <MudPaper Class="pa-3" Elevation="1">
+            <MudPaper Class="pa-3 no-select" Elevation="1">
                 <MudText Typo="Typo.caption" Color="Color.Secondary">Keys pressed</MudText>
                 <MudText Typo="Typo.h6">@_pressedCount</MudText>
             </MudPaper>
         </MudItem>
         <MudItem xs="6" sm="3">
-            <MudPaper Class="pa-3" Elevation="1">
+            <MudPaper Class="pa-3 no-select" Elevation="1">
                 <MudText Typo="Typo.caption" Color="Color.Secondary">Selected</MudText>
                 <MudText Typo="Typo.h6">@Selection.Count</MudText>
             </MudPaper>
@@ -55,11 +57,13 @@ else
     </MudGrid>
 
     <MudGrid>
-        <MudItem xs="12" md="8" lg="9">
+        @* board-column: a marquee started off the board overhangs it, and without this the panel
+           column paints over the overhang. See app.css. *@
+        <MudItem xs="12" md="8" lg="9" Class="board-column">
             <MudPaper Class="pa-4" Elevation="1">
                 <div class="d-flex align-center mb-3">
                     <MudText Typo="Typo.subtitle2" Color="Color.Secondary">
-                        Live per-key travel. Click a key to select it, drag to marquee-select, shift to add,
+                        Click a key to select it, click and drag to select, shift to add,
                         ctrl to toggle, Esc to clear. @(Store.IsDemo ? "Use “Simulate presses” to see the bars fill." : "")
                     </MudText>
                     <MudSpacer />
@@ -71,10 +75,16 @@ else
                 <KeyboardView />
             </MudPaper>
         </MudItem>
-        <MudItem xs="12" md="4" lg="3">
+        @* data-keeps-selection: clicking away from the board clears the selection (see keyboard.js),
+           and these panels are the one place where that would be wrong — they are what the selection
+           is *for*, so clearing on the way to an Apply button would apply it to nothing. *@
+        <MudItem xs="12" md="4" lg="3" data-keeps-selection="true">
             @* Tabbed rather than stacked: both panels act on the same selection, and side by side
                down one column they push each other off the screen. *@
-            <MudPaper Elevation="1">
+            @* no-select: these panels are controls and their prose is instructions for using them,
+               none of which is worth carrying off in a clipboard. The fields inside stay selectable
+               — see the rule in app.css. *@
+            <MudPaper Elevation="1" Class="no-select">
                 @* No icons on the tabs: this column is narrow at md, and icon+text overflows into
                    scroll arrows that truncate the labels to a letter. *@
                 <MudTabs Elevation="0" Rounded="false" ApplyEffectsToContainer="true"

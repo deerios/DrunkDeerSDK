@@ -58,17 +58,6 @@
             </tbody>
         </MudSimpleTable>
 
-        @* The firmware byte is the one number the SDK reasons from and cannot check. It decides
-           precision mode, which decides the depth range every panel offers. If the vendor driver
-           disagrees with what is shown above, the SDK is reading the wrong byte. *@
-        <MudAlert Severity="Severity.Normal" Dense="true" Class="mt-3">
-            <MudText Typo="Typo.caption">
-                The firmware number above is the raw byte from the identity response. The vendor's
-                driver may format it differently — if it shows something that isn't
-                <strong>@_session.FirmwareVersion</strong>, that's worth knowing about.
-            </MudText>
-        </MudAlert>
-
         <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Capabilities</MudText>
         @if (_capabilities.Count == 0)
         {

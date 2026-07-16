@@ -26,6 +26,13 @@
     touch-action: none;
 }
 
+/* A still picture of a theme (the gallery thumbnails) has no gestures to protect: touch-action:none
+   above exists to stop a marquee drag scrolling the page, and leaving it on a board that cannot be
+   marquee'd would trap the scroll of any page that shows one. */
+.board.static {
+    touch-action: auto;
+}
+
 .key {
     position: absolute;
     left: calc(var(--kx) * var(--u));
@@ -139,6 +146,7 @@
     background: rgba(255, 255, 255, 0.06);
     border-radius: 2px;
     overflow: hidden;
+    transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
 }
 
 .depth-fill {
@@ -149,6 +157,11 @@
     height: calc(var(--depth) * 100%);
     background: #666666;
     border-radius: 2px;
+    /* The lit state below is a step, not a ramp — the firmware registers the press at one point,
+       so the bar should snap there rather than fade up to it. This only smooths the way back down
+       to grey on release, where a hard cut reads as a glitch. Colour-only, and only on release,
+       so the pressed frames stay as cheap as before. */
+    transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
 }
 
 /* Actuation marker: a hairline across the track at the key's actuation point. Both its
@@ -164,9 +177,30 @@
     background: var(--actc);
 }
 
-/* Past the actuation point: fill goes accent, cap face brightens, glow firms up. */
+/* Past the actuation point: the fill lights up, the cap face brightens, the glow firms up.
+   The fill is the loud one on purpose — it is the only part of the key that says *when* the press
+   registered rather than how far it has gone, so crossing the marker has to be a different event
+   to the eye than the travel that led up to it. Hence a hot near-white core over the accent rather
+   than the accent alone: against the grey it is a change of brightness, not just of hue, which is
+   what survives peripheral vision while the user is looking at something else on the board. */
 .key.pressed .depth-fill {
-    background: var(--mud-palette-primary, #fb2c36);
+    background: color-mix(in srgb, var(--mud-palette-primary, #fb2c36) 55%, #ffffff);
+    /* Clipped by the track's overflow to the empty track above the fill, which is exactly where it
+       is wanted: the fill's leading edge blooms up the track it has yet to cover. */
+    box-shadow: 0 0 calc(var(--u) * 0.06) rgba(255, 255, 255, 0.9);
+    /* No transition on the way in: the firmware registers the press at a point, so the bar snaps
+       at that point. The base rule's transition still catches the way back out. */
+    transition: none;
+}
+
+/* The bloom around the whole track. On .depth-bar rather than .depth-fill because the fill sits
+   inside the track's overflow:hidden, and a glow that stops at the track edge is not a glow.
+   The radius is held under the 0.06u of cap between the track and the cap's right edge — .cap
+   clips too, and a bloom wider than that gap would end in a hard vertical cut down the cap. */
+.key.pressed .depth-bar {
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 0 calc(var(--u) * 0.05)
+                color-mix(in srgb, var(--mud-palette-primary, #fb2c36) 70%, transparent);
 }
 
 .key.pressed .cap {
@@ -224,4 +258,6 @@
 @media (prefers-reduced-motion: reduce) {
     .glow { transition: none; }
     .cap { transform: none; }
+    /* The bar still lights up — that is information, not decoration. It just stops fading back. */
+    .depth-bar, .depth-fill { transition: none; }
 }

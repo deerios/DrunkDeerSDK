@@ -3,6 +3,7 @@
 @inject KeyboardService Keyboard
 @inject KeyboardStore Store
 @inject SelectionStore Selection
+@inject SettingsService Settings
 @inject IDialogService Dialogs
 @inject ISnackbar Snackbar
 @implements IDisposable
@@ -54,14 +55,26 @@
            the last good colour but leaves the bad text sitting in the field, and it reports none of
            this (TextChanged only fires for values it parsed, so there is nothing to hang an error
            message on). The swatch is then the only thing still showing the colour that would
-           actually be written. *@
+           actually be written. It is also what opens the picker: it looks like the colour it would
+           set, so it is the thing people reach for to change it. *@
         <div class="colour-row mb-2">
-            <span class="swatch" style="background-color:@Hex(_color)" aria-hidden="true"></span>
-            <MudColorPicker @bind-Value="_color" Label="Key colour" Placeholder="#3060c0"
+            <button type="button" class="swatch" style="background-color:@Hex(_color)"
+                    disabled="@_busy" aria-label="@($"Key colour {Hex(_color)}. Opens the colour picker.")"
+                    @onclick="@(() => Toggle(_colorPicker))"></button>
+            <MudColorPicker @ref="_colorPicker" Value="@_color" ValueChanged="OnColorPicked"
+                            Label="Key colour" Placeholder="#000000"
                             Editable="true" ShowAlpha="false"
                             Variant="Variant.Outlined" Margin="Margin.Dense"
                             Disabled="@_busy" Class="flex-grow-1" />
         </div>
+
+        @if (LiveEditActive)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mb-2">
+                <MudIcon Icon="@Icons.Material.Filled.Bolt" Size="Size.Small" Class="mr-1" />
+                Live-editing: colours and brightness land on the keyboard as you set them.
+            </MudText>
+        }
 
         @if (!Keyboard.ColorsAreKnown)
         {
@@ -72,8 +85,10 @@
             @* Same treatment as the key colour above: this is the same control choosing the same
                kind of value, so it gets the same swatch and the same plain #rrggbb. *@
             <div class="colour-row mt-3">
-                <span class="swatch" style="background-color:@Hex(_background)" aria-hidden="true"></span>
-                <MudColorPicker @bind-Value="_background" Label="All other keys"
+                <button type="button" class="swatch" style="background-color:@Hex(_background)"
+                        disabled="@_busy" aria-label="@($"Background colour {Hex(_background)}. Opens the colour picker.")"
+                        @onclick="@(() => Toggle(_backgroundPicker))"></button>
+                <MudColorPicker @ref="_backgroundPicker" @bind-Value="_background" Label="All other keys"
                                 Editable="true" ShowAlpha="false"
                                 Variant="Variant.Outlined" Margin="Margin.Dense"
                                 Disabled="@_busy" Class="flex-grow-1" />
@@ -98,7 +113,10 @@
         <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block mt-3">
             Brightness: @_brightness
         </MudText>
-        <MudSlider T="int" @bind-Value="_brightness" Min="0" Max="9" Step="1"
+        @* Value/ValueChanged rather than a two-way bind, so dragging can write as it goes. Immediate
+           still raises a change per pixel; the debounce behind ScheduleLiveWrite is what keeps that
+           from being a packet each. *@
+        <MudSlider T="int" Value="@_brightness" ValueChanged="OnBrightnessPicked" Min="0" Max="9" Step="1"
                    Immediate="true" Disabled="@_busy" />
 
         <MudButton Class="mt-2" FullWidth="true" Variant="Variant.Filled" Color="Color.Primary"
@@ -147,6 +165,48 @@
     private int _speed = 5;
     private bool _busy;
 
+    private MudColorPicker? _colorPicker;
+    private MudColorPicker? _backgroundPicker;
+
+    // ── Live editing ─────────────────────────────────────────────────────────
+
+    /// <summary>How long the picker has to sit still before the colour is written.</summary>
+    /// <remarks>
+    /// Dragging across the picker's palette raises a change per pixel, and each one would otherwise
+    /// be a packet. Short enough to feel immediate, long enough that a drag is a handful of writes
+    /// rather than hundreds.
+    /// </remarks>
+    private static readonly TimeSpan LiveEditDelay = TimeSpan.FromMilliseconds(120);
+
+    /// <summary>Holds the writes to one at a time, so two colours can't race onto the board.</summary>
+    /// <remarks>
+    /// The waiter always sends whatever colour is current when its turn comes, not the one it was
+    /// queued with — so being held up can never land a stale colour on the keyboard.
+    /// </remarks>
+    private readonly SemaphoreSlim _liveWrite = new(1, 1);
+    private CancellationTokenSource? _liveDebounce;
+
+    /// <summary>Whether picking a colour writes it to the board straight away.</summary>
+    /// <remarks>
+    /// <see cref="KeyboardService.ColorsAreKnown"/> is the condition that isn't the setting: the
+    /// first colour write of a session sets every key the user *didn't* select (see
+    /// <see cref="ApplyAsync"/>), so it asks first. Live-editing that write would be the one thing
+    /// the confirmation exists to prevent, arriving before anyone could confirm it. Once the board
+    /// has been coloured once, a write only touches the selection, and there is nothing to ask.
+    /// </remarks>
+    private bool LiveEditActive =>
+        Settings.Current.LiveEditColors && Keyboard.ColorsAreKnown && !Selection.IsEmpty;
+
+    /// <summary>Opens the picker a swatch belongs to.</summary>
+    /// <remarks>
+    /// This is the same call the picker's own adornment button makes, so the swatch behaves exactly
+    /// like it — including that a second click does NOT close the popover: the picker's close-on-
+    /// outside-click runs first and the toggle then reopens it. Measured on both, and left matching
+    /// the built-in control rather than made cleverer. Clicking away is what closes it.
+    /// The ref is null only before the first render, and a click can't arrive before then.
+    /// </remarks>
+    private static Task Toggle(MudColorPicker? picker) => picker?.ToggleOpenAsync() ?? Task.CompletedTask;
+
     protected override void OnInitialized()
     {
         Selection.Changed += OnSelectionChanged;
@@ -188,6 +248,94 @@
         _color = new MudColor(r, g, b, byte.MaxValue);
     }
 
+    /// <summary>Takes the colour the picker moved to, and — when live-editing — starts the clock on writing it.</summary>
+    /// <remarks>
+    /// Not <c>async</c>: this replaces a two-way binding, and the swatch beside the picker has to
+    /// repaint now rather than after the debounce. So the write is left running and the handler
+    /// returns, which is what lets Blazor render the new colour immediately.
+    /// </remarks>
+    private void OnColorPicked(MudColor value)
+    {
+        _color = value;
+        ScheduleLiveWrite();
+    }
+
+    /// <summary>Takes the brightness the slider moved to, and — when live-editing — writes it too.</summary>
+    /// <remarks>
+    /// Board-wide, unlike the colour, so this lands on every key rather than the selection. It still
+    /// waits for <see cref="LiveEditActive"/>, which means a session that has never coloured the
+    /// board can't dim it from here without going through Apply — the same first-write confirmation
+    /// the colour respects, for the same reason: brightness rides the wire beside a whole-board
+    /// colour write, so there is no way to send one without the other.
+    /// </remarks>
+    private void OnBrightnessPicked(int value)
+    {
+        _brightness = value;
+        ScheduleLiveWrite();
+    }
+
+    /// <summary>Starts the clock on writing what the panel currently holds.</summary>
+    /// <remarks>
+    /// Shared by the colour and the brightness: both feed the same whole-board write, so a change to
+    /// either restarts the one debounce rather than each running its own. Dragging the brightness
+    /// slider right after picking a colour then sends both together, once.
+    /// </remarks>
+    private void ScheduleLiveWrite()
+    {
+        if (!LiveEditActive) return;
+
+        var previous = _liveDebounce;
+        var cts = new CancellationTokenSource();
+        _liveDebounce = cts;
+        previous?.Cancel();
+        previous?.Dispose();
+
+        _ = WriteSoonAsync(cts);
+    }
+
+    private async Task WriteSoonAsync(CancellationTokenSource cts)
+    {
+        try
+        {
+            await Task.Delay(LiveEditDelay, cts.Token);
+            await _liveWrite.WaitAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // The picker moved again inside the window, or the panel went away. Either way this
+            // colour is not the one to write.
+            return;
+        }
+        catch (ObjectDisposedException)
+        {
+            return; // the panel was disposed while this was queued
+        }
+
+        try
+        {
+            // Re-checked after the wait, not before: the selection can be cleared, or the board
+            // unplugged, while this was queued behind another write.
+            var keys = SelectedKeys();
+            if (keys.Length == 0 || !LiveEditActive) return;
+
+            await Keyboard.ApplyLightingAsync(
+                ToRgb(_color), keys, ToRgb(_background),
+                (byte)_backgroundBrightness, (byte)_brightness);
+        }
+        catch (Exception ex)
+        {
+            // No success message, unlike Apply: this fires while the user is dragging a colour
+            // around, and the keyboard lighting up is the confirmation. A failure still gets one —
+            // the board silently not following the picker is exactly when an explanation is wanted.
+            Snackbar.Add($"Couldn't apply lighting: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _liveWrite.Release();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
     private async Task ApplyAsync()
     {
         var keys = SelectedKeys();
@@ -195,7 +343,8 @@
 
         // Only the first write of a session needs confirming: it is the one that colours keys the
         // user never touched. After that the panel leaves them alone.
-        if (!Keyboard.ColorsAreKnown && !await ConfirmFirstWriteAsync(keys.Length))
+        if (!Keyboard.ColorsAreKnown && !Settings.Current.SkipWriteConfirmations
+            && !await ConfirmFirstWriteAsync(keys.Length))
             return;
 
         _busy = true;
@@ -309,5 +458,14 @@
         StateHasChanged();
     });
 
-    public void Dispose() => Selection.Changed -= OnSelectionChanged;
+    // The panel is disposed on every tab switch, so a debounced write left running would fire at a
+    // component that is no longer on screen — and, worse, would still reach the keyboard.
+    public void Dispose()
+    {
+        Selection.Changed -= OnSelectionChanged;
+        _liveDebounce?.Cancel();
+        _liveDebounce?.Dispose();
+        _liveDebounce = null;
+        _liveWrite.Dispose();
+    }
 }

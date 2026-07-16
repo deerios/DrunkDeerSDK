@@ -1,5 +1,6 @@
 @using System.Globalization
 @using DrunkDeer.Protocol
+@using DrunkDeer.Web.Theming
 @inject KeyboardService Keyboard
 @inject SelectionStore Selection
 @inject IJSRuntime JS
@@ -11,7 +12,10 @@
 
    The keys' class attribute is deliberately left to JS after the first render: the rAF loop
    toggles .pressed there, and re-rendering the attribute from Blazor would wipe it. Selection
-   travels out to JS through setSelection instead of via the render tree, for the same reason. *@
+   travels out to JS through setSelection instead of via the render tree, for the same reason.
+
+   Passing a Theme turns all of that off and makes the board a still picture of that theme — how
+   the gallery draws its thumbnails. See the Theme parameter. *@
 
 @if (_layout.Count == 0)
 {
@@ -24,18 +28,25 @@ else
     @* Rapid trigger rides a class rather than a custom property on the style attribute: keyboard.js
        owns --u and the board's height there, and re-rendering style would wipe both. It is board-wide
        state, so one class here badges every key — see _rapidTrigger. *@
-    <div class="board @(_rapidTrigger ? "rt" : "")" @ref="_board"
+    <div class="board @(_rapidTrigger ? "rt" : "") @(IsStatic ? "static" : "")" @ref="_board"
          style="--cols:@F(_cols); --rows:@F(_rows)">
         @* Rendered here rather than created in JS so that scoped CSS actually reaches it —
            isolation only rewrites selectors for elements Blazor itself stamps. *@
-        <div class="marquee" hidden></div>
+        @if (!IsStatic)
+        {
+            <div class="marquee" hidden></div>
+        }
         @foreach (var k in _layout)
         {
             var p = Paint(k);
             var a = Act(k);
+            @* A static board is a picture, not a control: no tab stop, no aria-pressed, and no
+               name read out per key. A gallery of them would otherwise put a few hundred phantom
+               buttons in the tab order, none of which do anything. The card names the theme. *@
             <div class="key @(k.Secondary is not null ? "key-l" : "")"
                  data-slot="@k.SlotIndex"
-                 role="button" tabindex="0" aria-pressed="false" aria-label="@k.Legend"
+                 role="@(IsStatic ? null : "button")" tabindex="@(IsStatic ? null : "0")"
+                 aria-pressed="@(IsStatic ? null : "false")" aria-label="@(IsStatic ? null : k.Legend)"
                  style="--kx:@F(k.X); --ky:@F(k.Y); --kw:@F(k.W); --kh:@F(k.H); --kc:@p.Kc; --lc:@p.Lc; --lit:@p.Lit; --act:@a.Act; --actc:var(--act-@a.State)">
                 <div class="glow"></div>
                 <div class="cap">
@@ -43,7 +54,13 @@ else
                     @* Always rendered, shown by .board.rt: the flag is board-wide, so this never
                        needs to differ per key and must not re-render when it flips. *@
                     <span class="rt-badge" aria-hidden="true">RT</span>
-                    <div class="depth-bar"><div class="depth-fill"></div></div>
+                    @* A still picture has no travel to track and no actuation point to mark, and a
+                       gallery page renders this per key per thumbnail — so it is left out rather
+                       than hidden in CSS. *@
+                    @if (!IsStatic)
+                    {
+                        <div class="depth-bar"><div class="depth-fill"></div></div>
+                    }
                 </div>
                 @if (k.Secondary is { } s)
                 {
@@ -58,6 +75,26 @@ else
 }
 
 @code {
+    /// <summary>
+    /// A theme to draw instead of the live keyboard. Non-null makes this board a still picture of
+    /// that theme: no travel, no selection, no actuation markers, no keyboard needed.
+    /// </summary>
+    /// <remarks>
+    /// This is what lets the gallery reuse the board rather than grow a second, lesser one that
+    /// would drift from it. The theme only decides the colours — the shape of the board still comes
+    /// from the connected keyboard when there is one, so a thumbnail shows the theme on <em>your</em>
+    /// board, and falls back to the A75 when there's nothing plugged in to ask.
+    /// </remarks>
+    [Parameter] public KeyboardTheme? Theme { get; set; }
+
+    /// <summary>Whether this board is a picture of a <see cref="Theme"/> rather than a live keyboard.</summary>
+    private bool IsStatic => Theme is not null;
+
+    // The board a theme is drawn on when no keyboard is connected to ask. The A75 is the model
+    // this SDK is actually verified against, so it is the honest stand-in.
+    private const string FallbackModel = ModelSlugs.A75;
+    private const string FallbackVariant = "ansi";
+
     // The legend colour used when there is no backlight to represent.
     private const string Neutral = "#cfcfd4";
 
@@ -80,8 +117,18 @@ else
     private IJSObjectReference? _module;
     private DotNetObjectReference<KeyboardView>? _selfRef;
 
+    // Built once per Theme rather than per key: expanding a theme walks its whole override map,
+    // and Paint() runs for every key on the board.
+    private ThemePalette? _palette;
+
     protected override void OnInitialized()
     {
+        if (IsStatic)
+        {
+            InitStatic();
+            return;
+        }
+
         Selection.Changed += OnSelectionChanged;
         Keyboard.LightingChanged += OnLightingChanged;
         Keyboard.ActuationChanged += OnActuationChanged;
@@ -99,9 +146,48 @@ else
         _actuation = Keyboard.GetActuationProfile();
     }
 
+    // A picture of a theme subscribes to nothing: none of the live state it would be listening for
+    // has any bearing on what it draws, and a gallery of thumbnails would otherwise put a dozen
+    // handlers on every lighting write the user makes elsewhere.
+    private void InitStatic()
+    {
+        var session = Keyboard.Session;
+        if (session is not null && session.HasLayout)
+        {
+            _layout = session.Layout;
+            _cols = session.BoardWidth;
+            _rows = session.BoardHeight;
+            return;
+        }
+
+        if (!KeyGeometry.TryGetKeys(FallbackModel, FallbackVariant, out var keys)) return;
+        _layout = keys;
+        // The session computes these from its layout the same way; there's no session here to
+        // borrow them from, and they're what the board's aspect ratio is built out of.
+        _cols = keys.Max(k => k.X + k.W);
+        _rows = keys.Max(k => k.Y + k.H);
+    }
+
+    // The gallery keeps one card mounted and swaps the theme through it while previewing, so the
+    // palette has to follow the parameter rather than being built once and forgotten.
+    protected override void OnParametersSet()
+    {
+        if (IsStatic) _palette = new ThemePalette(Theme!);
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender || _layout.Count == 0) return;
+
+        // Even a still picture attaches: keyboard.js is what measures the container and sets --u,
+        // and without it every key would render at zero size. It just gets no .NET reference, which
+        // is what tells it there is nothing to poll or select here.
+        if (IsStatic)
+        {
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/keyboard.js");
+            await _module.InvokeVoidAsync("attach", _board, null, _maxDepth, 1f);
+            return;
+        }
 
         var session = Keyboard.Session;
         if (session is null) return;
@@ -162,6 +248,9 @@ else
     /// </remarks>
     private KeyAct Act(KeyInfo k)
     {
+        // A still picture draws no marker, so this is only here to fill the style attribute.
+        if (IsStatic) return new(k.SlotIndex, "0", "unknown");
+
         if (Keyboard.ActuationPreviewMm is { } preview && Selection.Contains(k.SlotIndex))
             return new(k.SlotIndex, Frac(preview), "preview");
 
@@ -197,6 +286,10 @@ else
     /// </remarks>
     private KeyPaint Paint(KeyInfo k)
     {
+        // A theme is a description of a board's colours, so unlike the live case there is no
+        // "we don't know yet" — the theme is the answer, whether or not anything is connected.
+        if (_palette is not null) return Lit(k.SlotIndex, _palette[k.Key]);
+
         var session = Keyboard.Session;
         if (session is null) return new(k.SlotIndex, "transparent", Neutral, 0);
 
@@ -206,10 +299,20 @@ else
         if (Keyboard.ActiveMode is not null || Keyboard.BacklightOff)
             return new(k.SlotIndex, "transparent", Neutral, 0);
 
-        var (r, g, b) = session.GetKeyColor(k.Key);
-        if (r == 0 && g == 0 && b == 0) return new(k.SlotIndex, "transparent", Neutral, 0);
+        return Lit(k.SlotIndex, session.GetKeyColor(k.Key));
+    }
 
-        return new(k.SlotIndex, $"rgb({r},{g},{b})", Readable(r, g, b), 1);
+    /// <summary>One key painted in <paramref name="color"/>, or dark if that colour is black.</summary>
+    /// <remarks>
+    /// Black is the firmware's way of saying "this key is off" rather than a colour to draw, so it
+    /// has to read as an unlit key — a black glow behind a dark cap would look identical anyway,
+    /// but the legend would go with it and the key would vanish.
+    /// </remarks>
+    private static KeyPaint Lit(int slot, (byte R, byte G, byte B) color)
+    {
+        var (r, g, b) = color;
+        if (r == 0 && g == 0 && b == 0) return new(slot, "transparent", Neutral, 0);
+        return new(slot, $"rgb({r},{g},{b})", Readable(r, g, b), 1);
     }
 
     /// <summary>The key's colour, lifted to something legible on the dark cap without losing its hue.</summary>
@@ -297,10 +400,13 @@ else
 
     public async ValueTask DisposeAsync()
     {
-        Selection.Changed -= OnSelectionChanged;
-        Keyboard.LightingChanged -= OnLightingChanged;
-        Keyboard.ActuationChanged -= OnActuationChanged;
-        Keyboard.RapidTriggerChanged -= OnRapidTriggerChanged;
+        if (!IsStatic)
+        {
+            Selection.Changed -= OnSelectionChanged;
+            Keyboard.LightingChanged -= OnLightingChanged;
+            Keyboard.ActuationChanged -= OnActuationChanged;
+            Keyboard.RapidTriggerChanged -= OnRapidTriggerChanged;
+        }
         if (_module is not null)
         {
             try
