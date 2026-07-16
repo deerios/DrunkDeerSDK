@@ -187,9 +187,14 @@ internal static class KeyLayout
 		ModelSlugs.G65M1     or
 		ModelSlugs.G65M2     or
 		ModelSlugs.G65M3 => LayoutG65,
-		// TODO: verify via capture. X60 Future is a 60% board; G60's layout is a closer
-		// approximation than the 75% A75's (the previous silent default), but has not been
-		// confirmed against the real firmware slot map. See README verification table.
+		// BUG: X60 Future is mapped here for want of anything better, but LayoutG60 is known
+		// to be wrong for it, not merely unverified. The shipping X60 Future has arrow keys
+		// and a Del, and LayoutG60 has no ARR_* or DELETE tokens at all -- so GetKeyIndex
+		// cannot resolve those keys, and every slot from the point they appear is suspect.
+		// It is a ~64-key board against LayoutG60's 61. Actuation and lighting addressed by
+		// DDKey will land on the wrong physical keys. Fixing it needs a capture of the real
+		// slot map; until then X60 Future geometry is deliberately not defined, so the board
+		// draws as "no layout" rather than as a plausible lie. See README verification table.
 		ModelSlugs.G60   or
 		ModelSlugs.G60V600 or
 		ModelSlugs.X60Future => LayoutG60,

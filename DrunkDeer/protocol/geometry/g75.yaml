@@ -1,0 +1,119 @@
+# Physical key geometry for the DrunkDeer G75 (75% / 84-key), in KLE 1u key units.
+#
+# Coordinate system and field meanings are as documented in a75.yaml.
+#
+# Unlike the A75, the G75 is a flat 16x6 grid: the function row runs Esc + F1-F12
+# + Print/Ins/Del with no group gaps, the alphanumeric block sits directly beneath
+# it, and the arrow cluster is in line with the rows beside it rather than stepped.
+#
+# The three keys right of F12 are Print, Ins, Del in that order. The product layout
+# drawing (g75_ansi_layout.png) labels them Insert, Print, Delete, but both the
+# shipping hardware and KeyLayout.LayoutG75 (13=PRINT, 14=INSERT, 15=DELETE) agree
+# on Print first; the drawing has the two transposed.
+#
+# Slot 117 is FN2 in KeyLayout.LayoutG75 -- there is no APP token on this model --
+# so the key the caps legend "Menu" is DDKey.Fn2, not DDKey.Menu.
+#
+# Only the ANSI variant is defined; the JP variant (g75_jp) has a different key
+# count and remains TODO pending a hardware capture, per the KeyLayout convention.
+geometry:
+  g75:
+    board_name: G75
+    variants:
+      ansi:
+        keys:
+          # Function row (y = 0)
+          - { slot: 0,   key: Escape,       legend: "Esc",   x: 0,     y: 0, w: 1, h: 1 }
+          - { slot: 1,   key: F1,           legend: "F1",    x: 1,     y: 0 }
+          - { slot: 2,   key: F2,           legend: "F2",    x: 2,     y: 0 }
+          - { slot: 3,   key: F3,           legend: "F3",    x: 3,     y: 0 }
+          - { slot: 4,   key: F4,           legend: "F4",    x: 4,     y: 0 }
+          - { slot: 5,   key: F5,           legend: "F5",    x: 5,     y: 0 }
+          - { slot: 6,   key: F6,           legend: "F6",    x: 6,     y: 0 }
+          - { slot: 7,   key: F7,           legend: "F7",    x: 7,     y: 0 }
+          - { slot: 8,   key: F8,           legend: "F8",    x: 8,     y: 0 }
+          - { slot: 9,   key: F9,           legend: "F9",    x: 9,     y: 0 }
+          - { slot: 10,  key: F10,          legend: "F10",   x: 10,    y: 0 }
+          - { slot: 11,  key: F11,          legend: "F11",   x: 11,    y: 0 }
+          - { slot: 12,  key: F12,          legend: "F12",   x: 12,    y: 0 }
+          - { slot: 13,  key: PrintScreen,  legend: "Print", x: 13,    y: 0 }
+          - { slot: 14,  key: Insert,       legend: "Ins",   x: 14,    y: 0 }
+          - { slot: 15,  key: Delete,       legend: "Del",   x: 15,    y: 0 }
+
+          # Number row (y = 1)
+          - { slot: 21,  key: Backtick,     legend: "`",     x: 0,     y: 1 }
+          - { slot: 22,  key: D1,           legend: "1",     x: 1,     y: 1 }
+          - { slot: 23,  key: D2,           legend: "2",     x: 2,     y: 1 }
+          - { slot: 24,  key: D3,           legend: "3",     x: 3,     y: 1 }
+          - { slot: 25,  key: D4,           legend: "4",     x: 4,     y: 1 }
+          - { slot: 26,  key: D5,           legend: "5",     x: 5,     y: 1 }
+          - { slot: 27,  key: D6,           legend: "6",     x: 6,     y: 1 }
+          - { slot: 28,  key: D7,           legend: "7",     x: 7,     y: 1 }
+          - { slot: 29,  key: D8,           legend: "8",     x: 8,     y: 1 }
+          - { slot: 30,  key: D9,           legend: "9",     x: 9,     y: 1 }
+          - { slot: 31,  key: D0,           legend: "0",     x: 10,    y: 1 }
+          - { slot: 32,  key: Minus,        legend: "-",     x: 11,    y: 1 }
+          - { slot: 33,  key: Equal,        legend: "=",     x: 12,    y: 1 }
+          - { slot: 34,  key: Backspace,    legend: "Bksp",  x: 13,    y: 1, w: 2, h: 1 }
+          - { slot: 36,  key: Home,         legend: "Home",  x: 15,    y: 1 }
+
+          # QWERTY row (y = 2)
+          - { slot: 42,  key: Tab,          legend: "Tab",   x: 0,     y: 2, w: 1.5, h: 1 }
+          - { slot: 43,  key: Q,            legend: "Q",     x: 1.5,   y: 2 }
+          - { slot: 44,  key: W,            legend: "W",     x: 2.5,   y: 2 }
+          - { slot: 45,  key: E,            legend: "E",     x: 3.5,   y: 2 }
+          - { slot: 46,  key: R,            legend: "R",     x: 4.5,   y: 2 }
+          - { slot: 47,  key: T,            legend: "T",     x: 5.5,   y: 2 }
+          - { slot: 48,  key: Y,            legend: "Y",     x: 6.5,   y: 2 }
+          - { slot: 49,  key: U,            legend: "U",     x: 7.5,   y: 2 }
+          - { slot: 50,  key: I,            legend: "I",     x: 8.5,   y: 2 }
+          - { slot: 51,  key: O,            legend: "O",     x: 9.5,   y: 2 }
+          - { slot: 52,  key: P,            legend: "P",     x: 10.5,  y: 2 }
+          - { slot: 53,  key: LeftBracket,  legend: "[",     x: 11.5,  y: 2 }
+          - { slot: 54,  key: RightBracket, legend: "]",     x: 12.5,  y: 2 }
+          - { slot: 55,  key: Backslash,    legend: "\\",    x: 13.5,  y: 2, w: 1.5, h: 1 }
+          - { slot: 57,  key: PageUp,       legend: "PgUp",  x: 15,    y: 2 }
+
+          # Home row (y = 3)
+          - { slot: 63,  key: CapsLock,     legend: "Caps",  x: 0,     y: 3, w: 1.75, h: 1 }
+          - { slot: 64,  key: A,            legend: "A",     x: 1.75,  y: 3 }
+          - { slot: 65,  key: S,            legend: "S",     x: 2.75,  y: 3 }
+          - { slot: 66,  key: D,            legend: "D",     x: 3.75,  y: 3 }
+          - { slot: 67,  key: F,            legend: "F",     x: 4.75,  y: 3 }
+          - { slot: 68,  key: G,            legend: "G",     x: 5.75,  y: 3 }
+          - { slot: 69,  key: H,            legend: "H",     x: 6.75,  y: 3 }
+          - { slot: 70,  key: J,            legend: "J",     x: 7.75,  y: 3 }
+          - { slot: 71,  key: K,            legend: "K",     x: 8.75,  y: 3 }
+          - { slot: 72,  key: L,            legend: "L",     x: 9.75,  y: 3 }
+          - { slot: 73,  key: Semicolon,    legend: ";",     x: 10.75, y: 3 }
+          - { slot: 74,  key: Quote,        legend: "'",     x: 11.75, y: 3 }
+          - { slot: 76,  key: Enter,        legend: "Enter", x: 12.75, y: 3, w: 2.25, h: 1 }
+          - { slot: 78,  key: PageDown,     legend: "PgDn",  x: 15,    y: 3 }
+
+          # Shift row (y = 4)
+          - { slot: 84,  key: LeftShift,    legend: "Shift", x: 0,     y: 4, w: 2.25, h: 1 }
+          - { slot: 86,  key: Z,            legend: "Z",     x: 2.25,  y: 4 }
+          - { slot: 87,  key: X,            legend: "X",     x: 3.25,  y: 4 }
+          - { slot: 88,  key: C,            legend: "C",     x: 4.25,  y: 4 }
+          - { slot: 89,  key: V,            legend: "V",     x: 5.25,  y: 4 }
+          - { slot: 90,  key: B,            legend: "B",     x: 6.25,  y: 4 }
+          - { slot: 91,  key: N,            legend: "N",     x: 7.25,  y: 4 }
+          - { slot: 92,  key: M,            legend: "M",     x: 8.25,  y: 4 }
+          - { slot: 93,  key: Comma,        legend: ",",     x: 9.25,  y: 4 }
+          - { slot: 94,  key: Period,       legend: ".",     x: 10.25, y: 4 }
+          - { slot: 95,  key: Slash,        legend: "/",     x: 11.25, y: 4 }
+          - { slot: 96,  key: RightShift,   legend: "Shift", x: 12.25, y: 4, w: 1.75, h: 1 }
+          - { slot: 97,  key: ArrowUp,      legend: "Up",    x: 14,    y: 4 }
+          - { slot: 99,  key: End,          legend: "End",   x: 15,    y: 4 }
+
+          # Bottom row (y = 5)
+          - { slot: 105, key: LeftCtrl,     legend: "Ctrl",  x: 0,     y: 5, w: 1.25, h: 1 }
+          - { slot: 106, key: LeftWin,      legend: "Win",   x: 1.25,  y: 5, w: 1.25, h: 1 }
+          - { slot: 107, key: LeftAlt,      legend: "Alt",   x: 2.5,   y: 5, w: 1.25, h: 1 }
+          - { slot: 111, key: Space,        legend: "",      x: 3.75,  y: 5, w: 6.25, h: 1 }
+          - { slot: 114, key: RightAlt,     legend: "Alt",   x: 10,    y: 5 }
+          - { slot: 115, key: Fn1,          legend: "Fn",    x: 11,    y: 5 }
+          - { slot: 117, key: Fn2,          legend: "Menu",  x: 12,    y: 5 }
+          - { slot: 118, key: ArrowLeft,    legend: "Left",  x: 13,    y: 5 }
+          - { slot: 119, key: ArrowDown,    legend: "Down",  x: 14,    y: 5 }
+          - { slot: 120, key: ArrowRight,   legend: "Right", x: 15,    y: 5 }

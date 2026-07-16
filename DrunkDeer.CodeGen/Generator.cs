@@ -32,12 +32,13 @@ internal static class Generator
 
 	private static ScriptObject BuildGeometryVariantContext(GeometryDef g, GeometryVariant v)
 	{
-		string slugConst = "ModelSlugs." + ToPascal(g.Slug);
 		string arrayName = ToPascal(g.Slug) + ToPascal(v.Variant);
 
-		// One case label per variant name (primary + aliases): (ModelSlugs.X, "ansi") or (...)
-		var labels = new[] { v.Variant }.Concat(v.Aliases)
-			.Select(name => $"({slugConst}, \"{name}\")");
+		// One case label per (slug, variant) pair this geometry answers to: the defining slug
+		// plus any physically identical model, crossed with the variant name and its aliases.
+		var slugConsts   = new[] { g.Slug }.Concat(g.SlugAliases).Select(s => "ModelSlugs." + ToPascal(s));
+		var variantNames = new[] { v.Variant }.Concat(v.Aliases).ToList();
+		var labels = slugConsts.SelectMany(_ => variantNames, (slug, name) => $"({slug}, \"{name}\")");
 		string matchArm = string.Join(" or ", labels);
 
 		var keys = v.Keys.Select(k =>

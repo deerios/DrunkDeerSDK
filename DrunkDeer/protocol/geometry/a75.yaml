@@ -6,109 +6,122 @@
 # Optional x2/y2/w2/h2 describe a secondary rectangle for non-rectangular keys
 # (e.g. an ISO Enter) and map to KeyInfo.Secondary.
 #
+# The alphanumeric block sits 0.25u below the function row, and the arrow cluster
+# steps down a further 0.25u from the rows beside it; both are visible in the
+# product layout drawing and are not artefacts of rounding.
+#
+# The A75's rotary knob (top right, above Home at roughly x=15.25) is deliberately
+# absent: it is an encoder, not a key. It has no DDKey and no firmware slot in
+# KeyLayout.LayoutA75, so there is nothing to emit a KeyInfo for.
+#
 # Only the ANSI variant is defined. ISO is intentionally omitted for now: A75
 # firmware slot 75 (the ISO "#~" key) is labelled "u13" in KeyLayout.LayoutA75 and
 # has no DDKey, so its geometry cannot be emitted honestly without a hardware
-# capture. Other A75-family slugs (Pro/Ultra/Master) and G75/G65/G60 also remain
-# TODO: verify via capture, per the KeyLayout convention.
+# capture. A75 Pro/Master and G65/G60 also remain TODO: verify via capture, per the
+# KeyLayout convention. The G75 has its own file.
 geometry:
   a75:
     board_name: A75
+    # The A75 Ultra is the same board physically -- same grouped function row, same knob,
+    # same stepped arrow cluster, same 82 keys -- and already shares LayoutA75/RgbA75, so
+    # it answers with this geometry rather than a copy of it. A75 Pro and Master share the
+    # slot tables too but have not been checked against a photo, so they stay out.
+    slug_aliases: [a75_ultra]
     variants:
       ansi:
         # (11,1,1) is an alternate PID for the same ANSI hardware; share this geometry.
         aliases: [ansi_alt]
         keys:
           # Function row (y = 0)
-          - { slot: 0,   key: Escape,       legend: "Esc",   x: 0,     y: 0, w: 1, h: 1 }
-          - { slot: 2,   key: F1,           legend: "F1",    x: 2,     y: 0 }
-          - { slot: 3,   key: F2,           legend: "F2",    x: 3,     y: 0 }
-          - { slot: 4,   key: F3,           legend: "F3",    x: 4,     y: 0 }
-          - { slot: 5,   key: F4,           legend: "F4",    x: 5,     y: 0 }
-          - { slot: 6,   key: F5,           legend: "F5",    x: 6.5,   y: 0 }
-          - { slot: 7,   key: F6,           legend: "F6",    x: 7.5,   y: 0 }
-          - { slot: 8,   key: F7,           legend: "F7",    x: 8.5,   y: 0 }
-          - { slot: 9,   key: F8,           legend: "F8",    x: 9.5,   y: 0 }
-          - { slot: 10,  key: F9,           legend: "F9",    x: 11,    y: 0 }
-          - { slot: 11,  key: F10,          legend: "F10",   x: 12,    y: 0 }
-          - { slot: 12,  key: F11,          legend: "F11",   x: 13,    y: 0 }
-          - { slot: 13,  key: F12,          legend: "F12",   x: 14,    y: 0 }
-          - { slot: 14,  key: Delete,       legend: "Del",   x: 15.25, y: 0 }
+          - { slot: 0,   key: Escape,       legend: "Esc",   x: 0,     y: 0,    w: 1,    h: 1 }
+          - { slot: 2,   key: F1,           legend: "F1",    x: 1.25,  y: 0 }
+          - { slot: 3,   key: F2,           legend: "F2",    x: 2.25,  y: 0 }
+          - { slot: 4,   key: F3,           legend: "F3",    x: 3.25,  y: 0 }
+          - { slot: 5,   key: F4,           legend: "F4",    x: 4.25,  y: 0 }
+          - { slot: 6,   key: F5,           legend: "F5",    x: 5.5,   y: 0 }
+          - { slot: 7,   key: F6,           legend: "F6",    x: 6.5,   y: 0 }
+          - { slot: 8,   key: F7,           legend: "F7",    x: 7.5,   y: 0 }
+          - { slot: 9,   key: F8,           legend: "F8",    x: 8.5,   y: 0 }
+          - { slot: 10,  key: F9,           legend: "F9",    x: 9.75,  y: 0 }
+          - { slot: 11,  key: F10,          legend: "F10",   x: 10.75, y: 0 }
+          - { slot: 12,  key: F11,          legend: "F11",   x: 11.75, y: 0 }
+          - { slot: 13,  key: F12,          legend: "F12",   x: 12.75, y: 0 }
+          - { slot: 14,  key: Delete,       legend: "Del",   x: 14,    y: 0 }
 
-          # Number row (y = 1)
-          - { slot: 21,  key: Backtick,     legend: "`",     x: 0,     y: 1 }
-          - { slot: 22,  key: D1,           legend: "1",     x: 1,     y: 1 }
-          - { slot: 23,  key: D2,           legend: "2",     x: 2,     y: 1 }
-          - { slot: 24,  key: D3,           legend: "3",     x: 3,     y: 1 }
-          - { slot: 25,  key: D4,           legend: "4",     x: 4,     y: 1 }
-          - { slot: 26,  key: D5,           legend: "5",     x: 5,     y: 1 }
-          - { slot: 27,  key: D6,           legend: "6",     x: 6,     y: 1 }
-          - { slot: 28,  key: D7,           legend: "7",     x: 7,     y: 1 }
-          - { slot: 29,  key: D8,           legend: "8",     x: 8,     y: 1 }
-          - { slot: 30,  key: D9,           legend: "9",     x: 9,     y: 1 }
-          - { slot: 31,  key: D0,           legend: "0",     x: 10,    y: 1 }
-          - { slot: 32,  key: Minus,        legend: "-",     x: 11,    y: 1 }
-          - { slot: 33,  key: Equal,        legend: "=",     x: 12,    y: 1 }
-          - { slot: 34,  key: Backspace,    legend: "Bksp",  x: 13,    y: 1, w: 2, h: 1 }
-          - { slot: 36,  key: Home,         legend: "Home",  x: 15.25, y: 1 }
+          # Number row (y = 1.25)
+          - { slot: 21,  key: Backtick,     legend: "`",     x: 0,     y: 1.25 }
+          - { slot: 22,  key: D1,           legend: "1",     x: 1,     y: 1.25 }
+          - { slot: 23,  key: D2,           legend: "2",     x: 2,     y: 1.25 }
+          - { slot: 24,  key: D3,           legend: "3",     x: 3,     y: 1.25 }
+          - { slot: 25,  key: D4,           legend: "4",     x: 4,     y: 1.25 }
+          - { slot: 26,  key: D5,           legend: "5",     x: 5,     y: 1.25 }
+          - { slot: 27,  key: D6,           legend: "6",     x: 6,     y: 1.25 }
+          - { slot: 28,  key: D7,           legend: "7",     x: 7,     y: 1.25 }
+          - { slot: 29,  key: D8,           legend: "8",     x: 8,     y: 1.25 }
+          - { slot: 30,  key: D9,           legend: "9",     x: 9,     y: 1.25 }
+          - { slot: 31,  key: D0,           legend: "0",     x: 10,    y: 1.25 }
+          - { slot: 32,  key: Minus,        legend: "-",     x: 11,    y: 1.25 }
+          - { slot: 33,  key: Equal,        legend: "=",     x: 12,    y: 1.25 }
+          - { slot: 34,  key: Backspace,    legend: "Bksp",  x: 13,    y: 1.25, w: 2,    h: 1 }
+          - { slot: 36,  key: Home,         legend: "Home",  x: 15.25, y: 1.25 }
 
-          # QWERTY row (y = 2)
-          - { slot: 42,  key: Tab,          legend: "Tab",   x: 0,     y: 2, w: 1.5, h: 1 }
-          - { slot: 43,  key: Q,            legend: "Q",     x: 1.5,   y: 2 }
-          - { slot: 44,  key: W,            legend: "W",     x: 2.5,   y: 2 }
-          - { slot: 45,  key: E,            legend: "E",     x: 3.5,   y: 2 }
-          - { slot: 46,  key: R,            legend: "R",     x: 4.5,   y: 2 }
-          - { slot: 47,  key: T,            legend: "T",     x: 5.5,   y: 2 }
-          - { slot: 48,  key: Y,            legend: "Y",     x: 6.5,   y: 2 }
-          - { slot: 49,  key: U,            legend: "U",     x: 7.5,   y: 2 }
-          - { slot: 50,  key: I,            legend: "I",     x: 8.5,   y: 2 }
-          - { slot: 51,  key: O,            legend: "O",     x: 9.5,   y: 2 }
-          - { slot: 52,  key: P,            legend: "P",     x: 10.5,  y: 2 }
-          - { slot: 53,  key: LeftBracket,  legend: "[",     x: 11.5,  y: 2 }
-          - { slot: 54,  key: RightBracket, legend: "]",     x: 12.5,  y: 2 }
-          - { slot: 55,  key: Backslash,    legend: "\\",    x: 13.5,  y: 2, w: 1.5, h: 1 }
-          - { slot: 57,  key: PageUp,       legend: "PgUp",  x: 15.25, y: 2 }
+          # QWERTY row (y = 2.25)
+          - { slot: 42,  key: Tab,          legend: "Tab",   x: 0,     y: 2.25, w: 1.5,  h: 1 }
+          - { slot: 43,  key: Q,            legend: "Q",     x: 1.5,   y: 2.25 }
+          - { slot: 44,  key: W,            legend: "W",     x: 2.5,   y: 2.25 }
+          - { slot: 45,  key: E,            legend: "E",     x: 3.5,   y: 2.25 }
+          - { slot: 46,  key: R,            legend: "R",     x: 4.5,   y: 2.25 }
+          - { slot: 47,  key: T,            legend: "T",     x: 5.5,   y: 2.25 }
+          - { slot: 48,  key: Y,            legend: "Y",     x: 6.5,   y: 2.25 }
+          - { slot: 49,  key: U,            legend: "U",     x: 7.5,   y: 2.25 }
+          - { slot: 50,  key: I,            legend: "I",     x: 8.5,   y: 2.25 }
+          - { slot: 51,  key: O,            legend: "O",     x: 9.5,   y: 2.25 }
+          - { slot: 52,  key: P,            legend: "P",     x: 10.5,  y: 2.25 }
+          - { slot: 53,  key: LeftBracket,  legend: "[",     x: 11.5,  y: 2.25 }
+          - { slot: 54,  key: RightBracket, legend: "]",     x: 12.5,  y: 2.25 }
+          - { slot: 55,  key: Backslash,    legend: "\\",    x: 13.5,  y: 2.25, w: 1.5,  h: 1 }
+          - { slot: 57,  key: PageUp,       legend: "PgUp",  x: 15.25, y: 2.25 }
 
-          # Home row (y = 3)
-          - { slot: 63,  key: CapsLock,     legend: "Caps",  x: 0,     y: 3, w: 1.75, h: 1 }
-          - { slot: 64,  key: A,            legend: "A",     x: 1.75,  y: 3 }
-          - { slot: 65,  key: S,            legend: "S",     x: 2.75,  y: 3 }
-          - { slot: 66,  key: D,            legend: "D",     x: 3.75,  y: 3 }
-          - { slot: 67,  key: F,            legend: "F",     x: 4.75,  y: 3 }
-          - { slot: 68,  key: G,            legend: "G",     x: 5.75,  y: 3 }
-          - { slot: 69,  key: H,            legend: "H",     x: 6.75,  y: 3 }
-          - { slot: 70,  key: J,            legend: "J",     x: 7.75,  y: 3 }
-          - { slot: 71,  key: K,            legend: "K",     x: 8.75,  y: 3 }
-          - { slot: 72,  key: L,            legend: "L",     x: 9.75,  y: 3 }
-          - { slot: 73,  key: Semicolon,    legend: ";",     x: 10.75, y: 3 }
-          - { slot: 74,  key: Quote,        legend: "'",     x: 11.75, y: 3 }
-          - { slot: 76,  key: Enter,        legend: "Enter", x: 12.75, y: 3, w: 2.25, h: 1 }
-          - { slot: 78,  key: PageDown,     legend: "PgDn",  x: 15.25, y: 3 }
+          # Home row (y = 3.25)
+          - { slot: 63,  key: CapsLock,     legend: "Caps",  x: 0,     y: 3.25, w: 1.75, h: 1 }
+          - { slot: 64,  key: A,            legend: "A",     x: 1.75,  y: 3.25 }
+          - { slot: 65,  key: S,            legend: "S",     x: 2.75,  y: 3.25 }
+          - { slot: 66,  key: D,            legend: "D",     x: 3.75,  y: 3.25 }
+          - { slot: 67,  key: F,            legend: "F",     x: 4.75,  y: 3.25 }
+          - { slot: 68,  key: G,            legend: "G",     x: 5.75,  y: 3.25 }
+          - { slot: 69,  key: H,            legend: "H",     x: 6.75,  y: 3.25 }
+          - { slot: 70,  key: J,            legend: "J",     x: 7.75,  y: 3.25 }
+          - { slot: 71,  key: K,            legend: "K",     x: 8.75,  y: 3.25 }
+          - { slot: 72,  key: L,            legend: "L",     x: 9.75,  y: 3.25 }
+          - { slot: 73,  key: Semicolon,    legend: ";",     x: 10.75, y: 3.25 }
+          - { slot: 74,  key: Quote,        legend: "'",     x: 11.75, y: 3.25 }
+          - { slot: 76,  key: Enter,        legend: "Enter", x: 12.75, y: 3.25, w: 2.25, h: 1 }
+          - { slot: 78,  key: PageDown,     legend: "PgDn",  x: 15.25, y: 3.25 }
 
-          # Shift row (y = 4)
-          - { slot: 84,  key: LeftShift,    legend: "Shift", x: 0,     y: 4, w: 2.25, h: 1 }
-          - { slot: 86,  key: Z,            legend: "Z",     x: 2.25,  y: 4 }
-          - { slot: 87,  key: X,            legend: "X",     x: 3.25,  y: 4 }
-          - { slot: 88,  key: C,            legend: "C",     x: 4.25,  y: 4 }
-          - { slot: 89,  key: V,            legend: "V",     x: 5.25,  y: 4 }
-          - { slot: 90,  key: B,            legend: "B",     x: 6.25,  y: 4 }
-          - { slot: 91,  key: N,            legend: "N",     x: 7.25,  y: 4 }
-          - { slot: 92,  key: M,            legend: "M",     x: 8.25,  y: 4 }
-          - { slot: 93,  key: Comma,        legend: ",",     x: 9.25,  y: 4 }
-          - { slot: 94,  key: Period,       legend: ".",     x: 10.25, y: 4 }
-          - { slot: 95,  key: Slash,        legend: "/",     x: 11.25, y: 4 }
-          - { slot: 97,  key: RightShift,   legend: "Shift", x: 12.25, y: 4, w: 1.75, h: 1 }
-          - { slot: 98,  key: ArrowUp,      legend: "Up",    x: 14,    y: 4 }
-          - { slot: 99,  key: End,          legend: "End",   x: 15.25, y: 4 }
+          # Shift row (y = 4.25)
+          - { slot: 84,  key: LeftShift,    legend: "Shift", x: 0,     y: 4.25, w: 2.25, h: 1 }
+          - { slot: 86,  key: Z,            legend: "Z",     x: 2.25,  y: 4.25 }
+          - { slot: 87,  key: X,            legend: "X",     x: 3.25,  y: 4.25 }
+          - { slot: 88,  key: C,            legend: "C",     x: 4.25,  y: 4.25 }
+          - { slot: 89,  key: V,            legend: "V",     x: 5.25,  y: 4.25 }
+          - { slot: 90,  key: B,            legend: "B",     x: 6.25,  y: 4.25 }
+          - { slot: 91,  key: N,            legend: "N",     x: 7.25,  y: 4.25 }
+          - { slot: 92,  key: M,            legend: "M",     x: 8.25,  y: 4.25 }
+          - { slot: 93,  key: Comma,        legend: ",",     x: 9.25,  y: 4.25 }
+          - { slot: 94,  key: Period,       legend: ".",     x: 10.25, y: 4.25 }
+          - { slot: 95,  key: Slash,        legend: "/",     x: 11.25, y: 4.25 }
+          - { slot: 97,  key: RightShift,   legend: "Shift", x: 12.25, y: 4.25, w: 1.75, h: 1 }
+          - { slot: 98,  key: ArrowUp,      legend: "Up",    x: 14,    y: 4.5 }
+          - { slot: 99,  key: End,          legend: "End",   x: 15.25, y: 4.25 }
 
-          # Bottom row (y = 5)
-          - { slot: 105, key: LeftCtrl,     legend: "Ctrl",  x: 0,     y: 5, w: 1.25, h: 1 }
-          - { slot: 106, key: LeftWin,      legend: "Win",   x: 1.25,  y: 5, w: 1.25, h: 1 }
-          - { slot: 107, key: LeftAlt,      legend: "Alt",   x: 2.5,   y: 5, w: 1.25, h: 1 }
-          - { slot: 111, key: Space,        legend: "",      x: 3.75,  y: 5, w: 6.25, h: 1 }
-          - { slot: 115, key: RightAlt,     legend: "Alt",   x: 10,    y: 5 }
-          - { slot: 116, key: Fn1,          legend: "Fn",    x: 11,    y: 5 }
-          - { slot: 117, key: Menu,         legend: "Menu",  x: 12,    y: 5 }
-          - { slot: 119, key: ArrowLeft,    legend: "Left",  x: 13,    y: 5 }
-          - { slot: 120, key: ArrowDown,    legend: "Down",  x: 14,    y: 5 }
-          - { slot: 121, key: ArrowRight,   legend: "Right", x: 15,    y: 5 }
+          # Bottom row (y = 5.25)
+          - { slot: 105, key: LeftCtrl,     legend: "Ctrl",  x: 0,     y: 5.25, w: 1.25, h: 1 }
+          - { slot: 106, key: LeftWin,      legend: "Win",   x: 1.25,  y: 5.25, w: 1.25, h: 1 }
+          - { slot: 107, key: LeftAlt,      legend: "Alt",   x: 2.5,   y: 5.25, w: 1.25, h: 1 }
+          - { slot: 111, key: Space,        legend: "",      x: 3.75,  y: 5.25, w: 6.25, h: 1 }
+          - { slot: 115, key: RightAlt,     legend: "Alt",   x: 10,    y: 5.25 }
+          - { slot: 116, key: Fn1,          legend: "Fn",    x: 11,    y: 5.25 }
+          - { slot: 117, key: Menu,         legend: "Menu",  x: 12,    y: 5.25 }
+          - { slot: 119, key: ArrowLeft,    legend: "Left",  x: 13,    y: 5.5 }
+          - { slot: 120, key: ArrowDown,    legend: "Down",  x: 14,    y: 5.5 }
+          - { slot: 121, key: ArrowRight,   legend: "Right", x: 15,    y: 5.5 }

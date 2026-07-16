@@ -26,6 +26,14 @@ internal sealed class GeometryDef
 {
 	public string Slug { get; set; } = "";
 	public string BoardName { get; set; } = "";
+
+	/// <summary>
+	/// Other model slugs whose boards are physically identical to this one and share its
+	/// geometry, e.g. the A75 Ultra against the A75. Every variant defined here is offered
+	/// under each aliased slug too, so an alias must match on all of them.
+	/// </summary>
+	public List<string> SlugAliases { get; set; } = [];
+
 	public List<GeometryVariant> Variants { get; set; } = [];
 }
 

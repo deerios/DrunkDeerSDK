@@ -52,6 +52,10 @@ internal static class YamlLoader
 				if (modelGeo.TryGetValue("board_name", out var bnObj))
 					gd.BoardName = (string)bnObj;
 
+				if (modelGeo.TryGetValue("slug_aliases", out var slugAliasesObj) &&
+					slugAliasesObj is List<object> slugAliases)
+					gd.SlugAliases = slugAliases.Cast<string>().ToList();
+
 				if (modelGeo.TryGetValue("variants", out var varsObj) &&
 					varsObj is Dictionary<object, object> variants)
 				{
