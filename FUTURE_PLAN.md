@@ -1,5 +1,12 @@
 # FUTURE_PLAN — DrunkDeer CLI + Web UI
 
+> **Where the code went.** Both consumers now exist and neither is described by this file's layout
+> sections any more. The CLI shipped as `deerkb` in `DrunkDeer.Cli/`. The web app shipped and then
+> moved to its own repository — <https://github.com/deerios/DrunkDeerWeb> (`~/Projects/DrunkDeerWeb`)
+> — where it consumes this SDK as the `DrunkDeerSDK` NuGet package rather than a ProjectReference.
+> Everything below is kept as the reasoning that produced them, so read it as history: any path
+> starting `DrunkDeer.Web/` is now a path in that other repository.
+
 Plan for two new consumers of the DrunkDeer SDK:
 
 1. **`deer`** — a modern, git-style CLI built on `System.CommandLine`.
