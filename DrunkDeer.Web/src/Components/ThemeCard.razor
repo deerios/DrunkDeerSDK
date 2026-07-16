@@ -183,8 +183,8 @@
             await Preview.StartAsync(_theme);
             if (permanent)
                 Snackbar.Add(
-                    $"“{Entry.Name}” will stay on the board — the keyboard can't report the lighting " +
-                    "it had before, so there's nothing to put back.", Severity.Info);
+                    $"“{Entry.Name}” will remain because the keyboard can't report the lighting " +
+                    "it had before, so there's nothing to revert back to.", Severity.Info);
         }
         catch (Exception ex)
         {
