@@ -29,6 +29,14 @@ public class ThemeCatalogueFetchTests
 		public List<string> Requested { get; } = [];
 		public int Calls => Requested.Count;
 
+		/// <summary>What was asked for, with any query string dropped.</summary>
+		/// <remarks>
+		/// The catalogue is fetched with a cache-buster on the end, which is deliberately different
+		/// every time — so "which files did the app ask for" is a question about the part in front of
+		/// the '?'. The tests that are about the cache-buster itself read <see cref="Requested"/>.
+		/// </remarks>
+		public IEnumerable<string> Asked => Requested.Select(WithoutQuery);
+
 		public Stub(Func<string, HttpResponseMessage> reply) => _reply = reply;
 
 		protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
@@ -38,6 +46,11 @@ public class ThemeCatalogueFetchTests
 			return Task.FromResult(_reply(url));
 		}
 	}
+
+	private static string WithoutQuery(string url) => url.Split('?')[0];
+
+	/// <summary>Whether a request is for the catalogue, whatever cache-buster it carries.</summary>
+	private static bool IsIndex(string url) => WithoutQuery(url) == ThemeGallery.IndexUrl;
 
 	private static HttpResponseMessage Ok(string body, long? declaredLength = null)
 	{
@@ -71,7 +84,7 @@ public class ThemeCatalogueFetchTests
 
 	/// <summary>The whole repository: an index of the given themes, and a file for each.</summary>
 	private static Func<string, HttpResponseMessage> Repository(params string[] ids) => url =>
-		url == ThemeGallery.IndexUrl
+		IsIndex(url)
 			? Ok(Index(ids))
 			: ids.FirstOrDefault(id => url == ThemeGallery.ThemeUrl(id)) is { } found
 				? Ok(ThemeFile(found))
@@ -110,7 +123,50 @@ public class ThemeCatalogueFetchTests
 
 		await gallery.ListAsync();
 
-		Assert.That(handler.Requested, Is.EqualTo(new[] { ThemeGallery.IndexUrl }));
+		Assert.That(handler.Asked, Is.EqualTo(new[] { ThemeGallery.IndexUrl }));
+	}
+
+	// ── Getting past the caches ──────────────────────────────────────────────
+
+	[Test]
+	public async Task TheCatalogue_IsFetchedWithSomethingNoCacheHasSeen()
+	{
+		var (gallery, handler) = Gallery(Repository("ember"));
+
+		await gallery.ListAsync();
+
+		Assert.That(handler.Requested.Single(), Is.Not.EqualTo(ThemeGallery.IndexUrl));
+		Assert.That(handler.Requested.Single(), Does.StartWith(ThemeGallery.IndexUrl + "?t="));
+	}
+
+	[Test]
+	public async Task Refreshing_AsksForAUrlItHasNeverAskedFor()
+	{
+		// The regression that matters, and the whole reason the cache-buster exists. GitHub serves
+		// the catalogue through a CDN that holds it for minutes and keys on the URL, so a Refresh
+		// that asked the same question twice would be answered from the copy taken before the user's
+		// theme was merged — however many times they pressed it.
+		var (gallery, handler) = Gallery(Repository("ember"));
+		await gallery.ListAsync();
+
+		gallery.Reset();
+		await gallery.ListAsync();
+
+		Assert.That(handler.Requested, Has.Count.EqualTo(2));
+		Assert.That(handler.Requested[1], Is.Not.EqualTo(handler.Requested[0]));
+	}
+
+	[Test]
+	public async Task ATheme_IsFetchedPlain()
+	{
+		// A theme file is written once under an id that is never reused, so a cached one is never
+		// wrong. Busting these would cost the sharing that makes paging cheap and buy nothing.
+		var (gallery, handler) = Gallery(Repository("ember"));
+		var entry = (await gallery.ListAsync()).Single();
+
+		await gallery.LoadThemeAsync(entry);
+
+		Assert.That(handler.Requested, Does.Contain(ThemeGallery.ThemeUrl("ember")));
 	}
 
 	// ── When it does not work ────────────────────────────────────────────────
@@ -202,7 +258,7 @@ public class ThemeCatalogueFetchTests
 
 		await gallery.LoadThemeAsync(entries.Single(e => e.Id == "nord"));
 
-		Assert.That(handler.Requested, Is.EqualTo(new[] { ThemeGallery.IndexUrl, ThemeGallery.ThemeUrl("nord") }));
+		Assert.That(handler.Asked, Is.EqualTo(new[] { ThemeGallery.IndexUrl, ThemeGallery.ThemeUrl("nord") }));
 	}
 
 	[Test]
@@ -235,7 +291,7 @@ public class ThemeCatalogueFetchTests
 		// One card says it could not load; the gallery around it is fine. A theme file is other
 		// people's work exactly as the catalogue is.
 		var (gallery, _) = Gallery(url =>
-			url == ThemeGallery.IndexUrl ? Ok(Index("ember", "nord"))
+			IsIndex(url) ? Ok(Index("ember", "nord"))
 			: url == ThemeGallery.ThemeUrl("nord") ? Ok("<html>nope</html>")
 			: Ok(ThemeFile("ember")));
 
@@ -252,7 +308,7 @@ public class ThemeCatalogueFetchTests
 		// worth remembering.
 		var fail = true;
 		var (gallery, _) = Gallery(url =>
-			url == ThemeGallery.IndexUrl ? Ok(Index("ember"))
+			IsIndex(url) ? Ok(Index("ember"))
 			: fail ? throw new HttpRequestException("no network")
 			: Ok(ThemeFile("ember")));
 		var entry = (await gallery.ListAsync()).Single();
@@ -274,8 +330,8 @@ public class ThemeCatalogueFetchTests
 		await gallery.ListAsync();
 		await gallery.LoadThemeAsync(entry);
 
-		Assert.That(handler.Requested.Count(u => u == ThemeGallery.IndexUrl), Is.EqualTo(2));
-		Assert.That(handler.Requested.Count(u => u == ThemeGallery.ThemeUrl("ember")), Is.EqualTo(2));
+		Assert.That(handler.Asked.Count(u => u == ThemeGallery.IndexUrl), Is.EqualTo(2));
+		Assert.That(handler.Asked.Count(u => u == ThemeGallery.ThemeUrl("ember")), Is.EqualTo(2));
 	}
 
 	// ── The size limits ──────────────────────────────────────────────────────
@@ -312,7 +368,7 @@ public class ThemeCatalogueFetchTests
 	[Test]
 	public async Task AThemeThatSaysItIsTooBig_IsNotFetched()
 	{
-		var (gallery, _) = Gallery(url => url == ThemeGallery.IndexUrl
+		var (gallery, _) = Gallery(url => IsIndex(url)
 			? Ok(Index("ember"))
 			: Ok(ThemeFile("ember"), declaredLength: ThemeGallery.MaxThemeBytes + 1));
 		var entry = (await gallery.ListAsync()).Single();
@@ -324,7 +380,7 @@ public class ThemeCatalogueFetchTests
 	public async Task AThemeThatLiesAboutItsSize_IsStillCutOff()
 	{
 		var huge = $$"""{"id": "ember", "theme": {"brightness": 9}, "padding": "{{new string('a', ThemeGallery.MaxThemeBytes + 100)}}"}""";
-		var (gallery, _) = Gallery(url => url == ThemeGallery.IndexUrl ? Ok(Index("ember")) : Ok(huge, declaredLength: 10));
+		var (gallery, _) = Gallery(url => IsIndex(url) ? Ok(Index("ember")) : Ok(huge, declaredLength: 10));
 		var entry = (await gallery.ListAsync()).Single();
 
 		Assert.ThrowsAsync<InvalidDataException>(() => gallery.LoadThemeAsync(entry));

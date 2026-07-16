@@ -16,10 +16,18 @@
    but the heading and the way in to publishing one of your own. *@
 <div class="d-flex align-center justify-space-between mb-4">
     <MudText Typo="Typo.h5">Theme Gallery</MudText>
-    @* Not disabled while disconnected: publishing a theme is about a profile you have saved, and
-       needs the keyboard no more than saving it did. *@
-    <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Upload"
-               OnClick="PublishAsync">Publish a theme</MudButton>
+    <div class="d-flex align-center gap-2">
+        @* The gallery is fetched once per page load, so a theme merged while this tab was open is
+           not in it. This is how you go and look, without reloading the whole app. *@
+        <MudTooltip Text="Check for newly published themes">
+            <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" Disabled="@_refreshing"
+                           OnClick="RefreshAsync" aria-label="Refresh the theme gallery" />
+        </MudTooltip>
+        @* Not disabled while disconnected: publishing a theme is about a profile you have saved, and
+           needs the keyboard no more than saving it did. *@
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Upload"
+                   OnClick="PublishAsync">Publish a theme</MudButton>
+    </div>
 </div>
 
 <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
@@ -123,6 +131,7 @@ else if (_entries is not null)
     private IReadOnlyList<GalleryEntry> _matching = [];
     private IReadOnlyList<GalleryEntry> _page = [];
     private string? _error;
+    private bool _refreshing;
 
     /// <summary>The account the user says is theirs, if they have said.</summary>
     private string? Me => string.IsNullOrWhiteSpace(Prefs.Current.GitHubUsername) ? null : Prefs.Current.GitHubUsername.Trim();
@@ -177,6 +186,31 @@ else if (_entries is not null)
         catch (Exception ex)
         {
             _error = ex.Message;
+        }
+    }
+
+    /// <summary>Goes back to the repository, rather than showing what was fetched on page load.</summary>
+    /// <remarks>
+    /// The gallery holds onto the catalogue for the life of the page — that is what makes a page of
+    /// cards one fetch — so nothing short of throwing it away asks GitHub anything. Reset drops the
+    /// fetched themes too, since a refresh is also the answer to a card that came out wrong.
+    /// </remarks>
+    private async Task RefreshAsync()
+    {
+        // A second press while the first is in flight would fetch the catalogue twice and race two
+        // loads into _entries. The button disables itself for the moment it takes.
+        if (_refreshing) return;
+        _refreshing = true;
+        try
+        {
+            Themes.Reset();
+            await LoadAsync();
+            if (_error is null)
+                Snackbar.Add($"Gallery refreshed — {_entries?.Count ?? 0} themes.", Severity.Success);
+        }
+        finally
+        {
+            _refreshing = false;
         }
     }
 

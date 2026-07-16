@@ -47,6 +47,27 @@ public sealed partial class ThemeGallery
     /// <summary>The catalogue every copy of the app reads.</summary>
     public const string IndexUrl = $"{RawRoot}/index.json";
 
+    /// <summary>
+    /// <see cref="IndexUrl"/> with something on the end that no cache has seen before.
+    /// </summary>
+    /// <remarks>
+    /// raw.githubusercontent.com is served through a CDN that holds a file for minutes at a time,
+    /// and the browser keeps its own copy on top of that. Neither is told when a theme is merged, so
+    /// a user who publishes one and comes back to look for it is shown a catalogue from before it
+    /// existed — and the Refresh button, fetching the same URL, would be handed the same stale copy
+    /// and look broken. A query string both caches key on but the server ignores is what gets past
+    /// them; the value only has to be one no fetch has used before.
+    /// <para>
+    /// A fresh value rather than a clock reading, because two refreshes inside the clock's resolution
+    /// would read the same and produce the URL that was just cached — the one case this exists for.
+    /// </para>
+    /// <para>
+    /// Only the catalogue. A theme file is written once under an id that is never reused, so a cached
+    /// one is never wrong — and busting those would throw away the sharing that makes paging cheap.
+    /// </para>
+    /// </remarks>
+    private static string IndexFetchUrl() => $"{IndexUrl}?t={Guid.NewGuid():N}";
+
     /// <summary>The only shape of <c>index.json</c> this knows how to read.</summary>
     /// <remarks>
     /// Set by <c>tools/lib/catalogue.mjs</c>'s <c>INDEX_VERSION</c> over there, and this is the same
@@ -182,7 +203,7 @@ public sealed partial class ThemeGallery
 
     private async Task<IReadOnlyList<GalleryEntry>> FetchIndexAsync()
     {
-        var json = await GetBoundedAsync(IndexUrl, MaxIndexBytes, "theme catalogue").ConfigureAwait(false);
+        var json = await GetBoundedAsync(IndexFetchUrl(), MaxIndexBytes, "theme catalogue").ConfigureAwait(false);
         var entries = ReadIndex(json, _log);
         if (entries.Count == 0)
             _log.LogWarning("The theme catalogue came back with no themes in it.");
