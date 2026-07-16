@@ -76,7 +76,10 @@ public class CommandTests
 	[Test]
 	public void Turbo_On_UnsupportedModel_IsCapabilityError()
 	{
-		var r = CliHarness.Run("turbo", "on", "--demo", "--demo-model", "a75", "--yes", "--json");
+		// The G75 lists no capabilities at all, so it is a standing example of a board without turbo.
+		// This used to name the A75, which does have turbo — the model list says so, and the CLI has
+		// been answering "enabled" for it ever since.
+		var r = CliHarness.Run("turbo", "on", "--demo", "--demo-model", "g75", "--yes", "--json");
 		Assert.That(r.ExitCode, Is.EqualTo(ExitCode.CapabilityUnsupported));
 	}
 
