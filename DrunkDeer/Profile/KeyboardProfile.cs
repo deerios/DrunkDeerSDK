@@ -136,6 +136,18 @@ public readonly struct RgbColor
 	public RgbColor(byte r, byte g, byte b) => (R, G, B) = (r, g, b);
 
 	public void Deconstruct(out byte r, out byte g, out byte b) => (r, g, b) = (R, G, B);
+
+	/// <summary>
+	/// Scales each channel by <paramref name="level"/>/9 (clamped to 0-9). The firmware has no
+	/// per-key brightness — a single brightness byte applies to the whole RGB frame — so this is
+	/// how a color can still look dimmer than others in the same frame: darken its RGB values in
+	/// software before sending. Used for <see cref="KeyboardTheme.BaseBrightness"/>.
+	/// </summary>
+	public RgbColor Scale(byte level)
+	{
+		byte clamped = Math.Min(level, (byte)9);
+		return new RgbColor((byte)(R * clamped / 9), (byte)(G * clamped / 9), (byte)(B * clamped / 9));
+	}
 }
 
 /// <summary>Per-key colour override.</summary>
@@ -187,6 +199,17 @@ public sealed class KeyboardTheme
 	/// <summary>Uniform base colour applied to every key before per-key overrides.</summary>
 	[JsonPropertyName("baseColor")]
 	public RgbColor BaseColor { get; set; }
+
+	/// <summary>
+	/// Optional brightness scale (0-9) applied only to <see cref="BaseColor"/>, independent of
+	/// <see cref="Brightness"/> (the single firmware brightness byte sent for the whole frame).
+	/// Since the firmware has no per-key brightness, this dims <see cref="BaseColor"/>'s RGB
+	/// values in software (see <see cref="RgbColor.Scale"/>) before sending, so a background can
+	/// look dimmer than per-key highlights that share the same firmware brightness. Null leaves
+	/// <see cref="BaseColor"/> unscaled.
+	/// </summary>
+	[JsonPropertyName("baseBrightness")]
+	public byte? BaseBrightness { get; set; }
 
 	/// <summary>
 	/// Per-key colour overrides. Key is a <see cref="DDKey"/> name (case-insensitive).

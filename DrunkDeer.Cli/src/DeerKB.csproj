@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>DrunkDeer.Cli</RootNamespace>
+    <AssemblyName>deerkb</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- dotnet-tool packaging (`dotnet tool install -g deerkb`) -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>deerkb</ToolCommandName>
+    <PackageId>deerkb</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>deerios</Authors>
+    <Description>Command-line control for DrunkDeer analog HID keyboards (actuation, rapid trigger, lighting, profiles).</Description>
+    <PackageProjectUrl>https://github.com/deerios/DrunkDeerSDK</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/deerios/DrunkDeerSDK</RepositoryUrl>
+    <PackageTags>drunkdeer;keyboard;hid;cli;analog</PackageTags>
+    <PackageLicenseFile>LICENSE.md</PackageLicenseFile>
+
+    <!-- Self-contained single-file publish is driven from publish.sh / the release workflow
+         (passing -r, \-\-self-contained, -p:PublishSingleFile). Bundle native libs when it is on. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../LICENSE.md" Pack="true" PackagePath="" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.9" />
+    <PackageReference Include="Spectre.Console" Version="0.57.2" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../DrunkDeer/DrunkDeer.csproj" />
+  </ItemGroup>
+
+</Project>

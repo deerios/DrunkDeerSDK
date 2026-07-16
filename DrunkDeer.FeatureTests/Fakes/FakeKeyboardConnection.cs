@@ -10,7 +10,7 @@ namespace DrunkDeer.FeatureTests.Fakes;
 /// Uses a thread-safe queue since <see cref="KeyboardSession"/> polls on a background thread -
 /// tests that exercise <c>StartPolling</c> may need to enqueue responses concurrently.
 /// </summary>
-internal sealed class FakeKeyboardConnection : IKeyboardConnection
+internal sealed class FakeKeyboardConnection : IKeyboardConnection, IKeyboardConnectionAsync
 {
 	private readonly ConcurrentQueue<byte[]?> _responses = new();
 	private readonly ManualResetEventSlim _flushGate = new(initialState: true);
@@ -132,6 +132,44 @@ internal sealed class FakeKeyboardConnection : IKeyboardConnection
 
 	public byte[]? ReceiveCommand(int timeoutMs = 1000) =>
 		_responses.TryDequeue(out var resp) ? resp : null;
+
+	// ── Async transport (IKeyboardConnectionAsync) ────────────────────────────
+	// The async surface runs the same strict queue as the sync one so every existing
+	// FeatureTest can drive the session's async path with identical enqueue math. A
+	// receive on an empty queue emulates a real blocking read: it waits out the timeout
+	// and honours cancellation (so the async poll loop and cancellation tests behave
+	// like hardware), rather than the sync path's return-null-immediately.
+
+	public ValueTask SendAsync(byte[] packet, CancellationToken cancellationToken = default)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		Send(packet);
+		return ValueTask.CompletedTask;
+	}
+
+	public ValueTask<byte[]?> SendAndReceiveAsync(byte[] packet, int timeoutMs = 1000, CancellationToken cancellationToken = default)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		return new(SendAndReceive(packet, timeoutMs));
+	}
+
+	public async ValueTask<byte[]?> ReceiveCommandAsync(int timeoutMs = 1000, CancellationToken cancellationToken = default)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		if (_responses.TryDequeue(out var resp))
+			return resp;
+		// Nothing queued: behave like a blocking read that times out (or is cancelled).
+		if (timeoutMs > 0)
+			await Task.Delay(timeoutMs, cancellationToken).ConfigureAwait(false);
+		return null;
+	}
+
+	public ValueTask FlushReadBufferAsync(CancellationToken cancellationToken = default)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		FlushReadBuffer();
+		return ValueTask.CompletedTask;
+	}
 
 	/// <summary>Number of times <see cref="FlushReadBuffer"/> has been called.</summary>
 	public int FlushCount { get; private set; }

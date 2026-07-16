@@ -14,7 +14,57 @@ internal static class Generator
 		RenderModels(def, templatesDir, outputDir);
 		RenderStructs(def, templatesDir, outputDir);
 		RenderProfileBlocks(def, templatesDir, outputDir);
+		RenderGeometry(def, templatesDir, outputDir);
 	}
+
+	private static void RenderGeometry(ProtocolDef def, string templatesDir, string outputDir)
+	{
+		// Flatten every model's variants into one list of arrays + switch arms.
+		var variants = def.Geometries
+			.SelectMany(g => g.Variants.Select(v => BuildGeometryVariantContext(g, v)))
+			.ToList();
+
+		Render(
+			Path.Combine(templatesDir, "Geometry.sbn"),
+			Path.Combine(outputDir, "KeyGeometry.g.cs"),
+			ctx => ctx["variants"] = variants);
+	}
+
+	private static ScriptObject BuildGeometryVariantContext(GeometryDef g, GeometryVariant v)
+	{
+		string slugConst = "ModelSlugs." + ToPascal(g.Slug);
+		string arrayName = ToPascal(g.Slug) + ToPascal(v.Variant);
+
+		// One case label per variant name (primary + aliases): (ModelSlugs.X, "ansi") or (...)
+		var labels = new[] { v.Variant }.Concat(v.Aliases)
+			.Select(name => $"({slugConst}, \"{name}\")");
+		string matchArm = string.Join(" or ", labels);
+
+		var keys = v.Keys.Select(k =>
+		{
+			string secondary = k.HasSecondary
+				? $", new KeyRect({F(k.X2!.Value)}, {F(k.Y2!.Value)}, {F(k.W2!.Value)}, {F(k.H2!.Value)})"
+				: "";
+			string ctor =
+				$"new(DDKey.{k.Key}, {k.Slot}, {Quote(k.Legend)}, " +
+				$"{F(k.X)}, {F(k.Y)}, {F(k.W)}, {F(k.H)}{secondary})";
+			return new ScriptObject { ["ctor"] = ctor };
+		}).ToList();
+
+		return new ScriptObject
+		{
+			["array_name"] = arrayName,
+			["match_arm"]  = matchArm,
+			["board_name"] = g.BoardName,
+			["keys"]       = keys,
+		};
+	}
+
+	private static string F(float v) =>
+		v.ToString(System.Globalization.CultureInfo.InvariantCulture) + "f";
+
+	private static string Quote(string s) =>
+		"\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
 	private static void RenderMessages(ProtocolDef def, string templatesDir, string outputDir)
 	{
@@ -246,9 +296,15 @@ internal static class Generator
 		if (m.Capabilities.Contains("turbo_mode"))      interfaces.Add("IHasTurboMode");
 		if (m.Capabilities.Contains("logo_light"))     interfaces.Add("IHasLogoLight");
 		if (m.Capabilities.Contains("side_light"))     interfaces.Add("IHasSideLight");
-		// kun_precision without any other FuncBlock-implying capability needs explicit IHasFuncBlock.
+		// The gateway belongs to models that declare Kun or HighPrecision as a capability. Models
+		// that only reach Kun through a firmware threshold are not on this list - see
+		// KeyboardSession.HasFuncBlock, which this must agree with. IHasHighPrecision, IHasLogoLight
+		// and IHasSideLight already extend IHasFuncBlock, so only add it when none of them applies.
 		bool hasFuncBlock = m.Capabilities.Contains("kun_precision") || m.Capabilities.Contains("high_precision");
-		if (hasFuncBlock && interfaces.Count == 0) interfaces.Add("IHasFuncBlock");
+		bool impliedByAnotherMarker = m.Capabilities.Contains("high_precision")
+			|| m.Capabilities.Contains("logo_light")
+			|| m.Capabilities.Contains("side_light");
+		if (hasFuncBlock && !impliedByAnotherMarker) interfaces.Add("IHasFuncBlock");
 		string interfacesExpr = interfaces.Count > 0 ? string.Join(", ", interfaces) : "";
 
 		return new ScriptObject

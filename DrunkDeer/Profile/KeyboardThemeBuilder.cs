@@ -21,6 +21,7 @@ public sealed class KeyboardThemeBuilder
 {
 	private RgbColor _base;
 	private byte     _brightness = 9;
+	private byte?    _baseBrightness;
 	private Dictionary<string, KeyColor>? _keys;
 
 	/// <summary>Sets the uniform base colour applied to every key.</summary>
@@ -44,6 +45,16 @@ public sealed class KeyboardThemeBuilder
 		return this;
 	}
 
+	/// <summary>
+	/// Sets a brightness scale (0-9) applied only to the base colour, independent of
+	/// <see cref="Brightness"/>. See <see cref="KeyboardTheme.BaseBrightness"/>.
+	/// </summary>
+	public KeyboardThemeBuilder BaseBrightness(byte level)
+	{
+		_baseBrightness = level;
+		return this;
+	}
+
 	/// <summary>Sets the colour for a single key.</summary>
 	public KeyboardThemeBuilder Key(DDKey key, byte r, byte g, byte b)
 	{
@@ -64,8 +75,9 @@ public sealed class KeyboardThemeBuilder
 	/// <summary>Builds and returns the <see cref="KeyboardTheme"/>.</summary>
 	public KeyboardTheme Build() => new()
 	{
-		BaseColor  = _base,
-		Brightness = _brightness,
-		Keys       = _keys,
+		BaseColor      = _base,
+		Brightness     = _brightness,
+		BaseBrightness = _baseBrightness,
+		Keys           = _keys,
 	};
 }

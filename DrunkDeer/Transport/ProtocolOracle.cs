@@ -1,7 +1,13 @@
-using DrunkDeer.Protocol;
-using DrunkDeer.ProtocolAnalyzer.Capture;
+namespace DrunkDeer.Protocol;
 
-namespace DrunkDeer.ProtocolAnalyzer.Protocol;
+/// <summary>Which way a packet crossed the wire.</summary>
+public enum PacketDirection
+{
+    /// <summary>A packet the host sent to the keyboard.</summary>
+    HostToDevice,
+    /// <summary>A packet the keyboard sent to the host.</summary>
+    DeviceToHost
+}
 
 /// <summary>A named field extracted from an IN packet payload.</summary>
 /// <param name="FirmwareSensitive">
@@ -48,6 +54,21 @@ public static class ProtocolOracle
 
         return direction == PacketDirection.HostToDevice ? ClassifyOut(buf) : ClassifyIn(buf);
     }
+
+    /// <summary>
+    /// <see langword="true"/> if this packet is part of the continuous key-travel polling: the
+    /// request the poll loop repeats, or one of the travel packets answering it.
+    /// </summary>
+    /// <remarks>
+    /// Polling is almost all the traffic a connected keyboard ever carries - hundreds of packets a
+    /// second, against a handful for any configuration the user actually performs. Anything
+    /// presenting or recording live traffic needs to separate the two, and this is the cheap test
+    /// for it: no allocation and no classification, so it is safe to call on every packet.
+    /// </remarks>
+    public static bool IsTravelPolling(ReadOnlySpan<byte> buf, PacketDirection direction) =>
+        direction == PacketDirection.HostToDevice
+            ? buf.StartsWith(TravelRequest.Header)
+            : TravelResponse.Matches(buf) || KeyTravelHighPrecision.Matches(buf);
 
     /// <summary>
     /// Validates that an observed IN packet is the expected response to the preceding OUT.

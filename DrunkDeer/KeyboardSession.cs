@@ -160,7 +160,7 @@ public enum LightingMode : byte
 /// poll loop and raises typed events for key travel changes, presses, and releases.
 /// Also exposes configuration methods for actuation points, lighting, and global options.
 /// </summary>
-public class KeyboardSession : IDisposable
+public partial class KeyboardSession : IDisposable, IAsyncDisposable
 {
 	private readonly ILogger _log;
 
@@ -177,6 +177,9 @@ public class KeyboardSession : IDisposable
 	private static readonly int[] HpSectionSizes = [30, 30, 30, 30, 6];
 
 	private readonly IKeyboardConnection _connection;
+	// Non-null when _connection also implements the async surface (or when the session was opened
+	// over an async-only connection). Drives the non-blocking async API; see KeyboardSession.Async.cs.
+	private readonly IKeyboardConnectionAsync? _asyncConnection;
 	private readonly PrecisionMode _precisionMode;
 	private readonly short[] _heights = new short[KeyCount];
 	private readonly bool[] _pressed = new bool[KeyCount];
@@ -190,6 +193,7 @@ public class KeyboardSession : IDisposable
 	// Per-model layout and key-mapping data (initialised in constructor from KeyLayout)
 	private readonly int[] _rgbIndices;
 	private readonly IReadOnlyDictionary<DDKey, int> _keyIndexMap;
+	private readonly IReadOnlyList<KeyInfo> _layout;
 
 	// Stateful key-point profiles - used by DDKey depth-setter overloads so a
 	// per-key change can be sent as a complete packet with all other keys unchanged.
@@ -213,6 +217,23 @@ public class KeyboardSession : IDisposable
 	public string Variant { get; }
 	/// <summary>Firmware version byte returned by the keyboard.</summary>
 	public byte FirmwareVersion { get; }
+
+	/// <summary>
+	/// Ordered physical key geometry for the connected model+variant, in KLE 1u
+	/// key units. Each <see cref="KeyInfo"/> carries the key's <see cref="DDKey"/>,
+	/// firmware slot index, legend, and placement. Empty when no geometry has been
+	/// defined for this model yet - check <see cref="HasLayout"/>.
+	/// </summary>
+	public IReadOnlyList<KeyInfo> Layout => _layout;
+
+	/// <summary><see langword="true"/> when <see cref="Layout"/> has geometry for this model+variant.</summary>
+	public bool HasLayout => _layout.Count > 0;
+
+	/// <summary>Board width in KLE key units (largest key right-edge). 0 when <see cref="HasLayout"/> is false.</summary>
+	public float BoardWidth { get; }
+
+	/// <summary>Board height in KLE key units (largest key bottom-edge). 0 when <see cref="HasLayout"/> is false.</summary>
+	public float BoardHeight { get; }
 
 	/// <summary>
 	/// Key travel depth in mm that fires <see cref="KeyDown"/>. Default: 1.0 mm.
@@ -264,21 +285,34 @@ public class KeyboardSession : IDisposable
 	internal bool HasSideLight => (Model.Capabilities & Capabilities.SideLight) != 0;
 
 	/// <summary>
-	/// <see langword="true"/> if the connected keyboard persists Turbo mode via the FuncBlock gateway.
-	/// HighPrecision models (A75 Ultra, A75 Master, X60 Future) and always-KunPrecision
-	/// models (G65 m1/m2/m3, G60 v600) support this feature.
-	/// Standard-precision models with firmware-gated Kun do not because old firmware does
-	/// not respond to the FuncBlock gateway (0x55/0x05).
+	/// <see langword="true"/> if the connected keyboard supports Turbo mode.
 	/// </summary>
+	/// <remarks>
+	/// Turbo is switched on and off with the CommonConfig packet (0xB5), which every model
+	/// carrying this capability answers - the FuncBlock gateway is not involved. Boards that
+	/// also have the gateway (see <see cref="HasFuncBlock"/>) additionally persist the setting
+	/// into the stored function block, so it survives a replug; the rest hold it only for as
+	/// long as they stay powered.
+	/// </remarks>
 	internal bool HasTurboMode => (Model.Capabilities & Capabilities.TurboMode) != 0;
 
 	/// <summary>
 	/// <see langword="true"/> when the FuncBlock gateway (0x55/0x05 read, 0x06 write) is
-	/// supported by the connected keyboard. Requires <see cref="PrecisionMode"/> to be
-	/// <see cref="PrecisionMode.Kun"/> or <see cref="PrecisionMode.HighPrecision"/>. Standard-precision
-	/// models running below their Kun firmware threshold do not respond to these sub-commands.
+	/// supported by the connected keyboard. This is a property of the model: HighPrecision
+	/// models (A75 Ultra, A75 Master, X60 Future) and models that are always Kun-precision
+	/// (G65 m1/m2/m3, G60 v600) have the gateway; nothing else does.
 	/// </summary>
-	internal bool HasFuncBlock => _precisionMode != PrecisionMode.Standard;
+	/// <remarks>
+	/// Known limitation: models that reach Kun precision through a firmware threshold rather
+	/// than a declared capability - the base A75, A75 Pro, G75, G65, G60 - are treated as having
+	/// no gateway at any firmware. This used to be <c>_precisionMode != Standard</c>, on the
+	/// assumption that Kun precision and the gateway arrive together. They do not: an A75 owner
+	/// reports that no released A75 firmware answers these sub-commands. Kun precision is about
+	/// depth resolution and is left firmware-gated as before. Granting the gateway back to any
+	/// of these models needs a capture showing that model answering 0x55/0x05.
+	/// </remarks>
+	internal bool HasFuncBlock =>
+		(Model.Capabilities & (Capabilities.KunPrecision | Capabilities.HighPrecision)) != 0;
 
 	/// <summary>
 	/// Raised when the background poll loop detects that the keyboard has been disconnected.
@@ -444,6 +478,10 @@ public class KeyboardSession : IDisposable
 	{
 		_log           = (ILogger?)loggerFactory?.CreateLogger<KeyboardSession>() ?? NullLogger.Instance;
 		_connection    = connection;
+		// A connection that also implements the async surface (the desktop KeyboardConnection,
+		// the simulator, the fake) lets this session drive the non-blocking async path. A sync-only
+		// connection leaves this null and the *Async methods throw a clear error.
+		_asyncConnection = connection as IKeyboardConnectionAsync;
 		try
 		{
 			Model          = connection.Model;
@@ -456,6 +494,17 @@ public class KeyboardSession : IDisposable
 			var layout = KeyLayout.GetLayout(Model.Slug);
 			_rgbIndices      = KeyLayout.GetRgbIndices(Model.Slug, Variant);
 			_keyIndexMap     = KeyLayout.BuildIndexMap(layout);
+
+			// Physical geometry is optional: only defined models+variants have it;
+			// everything else gets an empty layout (HasLayout == false).
+			KeyGeometry.TryGetKeys(Model.Slug, Variant, out _layout);
+			foreach (var k in _layout)
+			{
+				float right  = Math.Max(k.X + k.W, k.Secondary is { } s1 ? s1.X + s1.W : 0f);
+				float bottom = Math.Max(k.Y + k.H, k.Secondary is { } s2 ? s2.Y + s2.H : 0f);
+				if (right  > BoardWidth)  BoardWidth  = right;
+				if (bottom > BoardHeight) BoardHeight = bottom;
+			}
 
 			int profileSize = TotalKeyCount;
 			_actuationProfile = new float[profileSize];
@@ -489,7 +538,17 @@ public class KeyboardSession : IDisposable
 	/// and returns a ready-to-use <see cref="KeyboardSession"/>.
 	/// </summary>
 	public static KeyboardSession OpenFirst(ILoggerFactory? loggerFactory = null) =>
-		new(KeyboardDiscoverer.OpenFirst(loggerFactory), loggerFactory);
+		new((IKeyboardConnection)KeyboardDiscoverer.OpenFirst(loggerFactory), loggerFactory);
+
+	/// <summary>
+	/// Builds a session over a caller-supplied connection. Use this to drive the
+	/// session from a simulator (<see cref="Simulation.SimulatedKeyboardConnection"/>)
+	/// or any other <see cref="IKeyboardConnection"/> when you already own the transport
+	/// (demo mode, tests, non-discovery openers). The session takes ownership: disposing
+	/// it disposes the connection.
+	/// </summary>
+	public static KeyboardSession Open(IKeyboardConnection connection, ILoggerFactory? loggerFactory = null) =>
+		new(connection, loggerFactory);
 
 	/// <summary>Starts the background poll loop. Calling while already polling is a no-op.</summary>
 	public void StartPolling(CancellationToken cancellationToken = default)
@@ -1735,7 +1794,7 @@ public class KeyboardSession : IDisposable
 	{
 		EnsureNotPolling();
 		SendCommonConfig(true, _rapidTriggerEnabled, _lastWinRtMode, _rapidTriggerAutoMatch);
-		if (HasTurboMode) { var b = FetchFuncBlock(); b.TurboMode = true;  PushFuncBlock(b); }
+		if (HasFuncBlock) { var b = FetchFuncBlock(); b.TurboMode = true;  PushFuncBlock(b); }
 	}
 
 	/// <summary>Disables Turbo mode globally.</summary>
@@ -1743,7 +1802,7 @@ public class KeyboardSession : IDisposable
 	{
 		EnsureNotPolling();
 		SendCommonConfig(false, _rapidTriggerEnabled, _lastWinRtMode, _rapidTriggerAutoMatch);
-		if (HasTurboMode) { var b = FetchFuncBlock(); b.TurboMode = false; PushFuncBlock(b); }
+		if (HasFuncBlock) { var b = FetchFuncBlock(); b.TurboMode = false; PushFuncBlock(b); }
 	}
 
 	/// <summary>
@@ -1790,7 +1849,8 @@ public class KeyboardSession : IDisposable
 
 	private void ApplyTheme(KeyboardTheme theme)
 	{
-		var (br, bg, bb) = theme.BaseColor;
+		var baseColor = theme.BaseBrightness is { } level ? theme.BaseColor.Scale(level) : theme.BaseColor;
+		var (br, bg, bb) = baseColor;
 		for (int i = 0; i < _rgbIndices.Length; i++)
 			_rgbProfile[_rgbIndices[i]] = (br, bg, bb);
 

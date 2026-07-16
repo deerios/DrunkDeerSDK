@@ -28,3 +28,9 @@ jobs:
 
       - name: Test
         run: dotnet test DrunkDeer/DrunkDeer.slnx --nologo
+
+      - name: Build deerkb CLI
+        run: dotnet build deerkb/deerkb.slnx --nologo
+
+      - name: Test deerkb CLI
+        run: dotnet test deerkb/deerkb.slnx --nologo

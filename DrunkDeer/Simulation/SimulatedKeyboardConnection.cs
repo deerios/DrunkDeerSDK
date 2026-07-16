@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using DrunkDeer.Protocol;
 
 namespace DrunkDeer.Simulation;
@@ -18,7 +19,7 @@ namespace DrunkDeer.Simulation;
 /// keeps those paths from failing. Only the A75 is verified hardware, so frame values here are
 /// synthetic, not a capture.
 /// </remarks>
-public sealed class SimulatedKeyboardConnection : IKeyboardConnection
+public sealed class SimulatedKeyboardConnection : IKeyboardConnection, IKeyboardConnectionAsync
 {
 	// Mirror of KeyboardSession's layout constants (private there): 3 standard B7 packets vs
 	// 5 high-precision 0xFD/0x06 sections, and their per-packet key ranges.
@@ -57,6 +58,20 @@ public sealed class SimulatedKeyboardConnection : IKeyboardConnection
 	/// so a demo display looks alive at rest. Off by default so tests stay deterministic.
 	/// </summary>
 	public bool IdleJitter { get; set; }
+
+	/// <summary>
+	/// Minimum wall-clock spacing between synthesised travel frames on the <em>async</em> transport.
+	/// A real keyboard's blocking read paces the poll loop at the device's report rate; the simulator
+	/// stages frames instantly, so without this the async poll loop would spin flat-out and peg a core
+	/// (fatal on the single-threaded WASM UI, where it starves rendering). Defaults to ~8&#160;ms
+	/// (~125&#160;Hz) — comfortably above a 60&#160;fps display. Set to <see cref="TimeSpan.Zero"/> to
+	/// disable pacing. Does not affect the synchronous <see cref="Send"/>/<see cref="ReceiveCommand"/>
+	/// path, which stays instant for deterministic tests.
+	/// </summary>
+	public TimeSpan FrameInterval { get; set; } = TimeSpan.FromMilliseconds(8);
+
+	// Timestamp of the last async-staged frame; 0 until the first frame. Used to pace the async loop.
+	private long _lastFrameStamp;
 
 	/// <param name="model">Model to advertise; defaults to the A75.</param>
 	/// <param name="firmwareVersion">Firmware version to advertise (affects Kun-precision upgrade).</param>
@@ -134,6 +149,66 @@ public sealed class SimulatedKeyboardConnection : IKeyboardConnection
 	{
 		lock (_gate)
 			_pending.Clear();
+	}
+
+	// ── Async transport (IKeyboardConnectionAsync) ────────────────────────────
+	// Mirrors the sync surface. Sends stage/ack synchronously (cheap, no I/O); a receive
+	// on an empty queue waits out the timeout honouring cancellation, matching a real
+	// keyboard's blocking read so the async poll loop paces itself the same way.
+
+	public async ValueTask SendAsync(byte[] packet, CancellationToken cancellationToken = default)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		// Only the travel request stages a frame; pace it so the async poll loop runs at a realistic
+		// rate instead of spinning. Non-travel fire-and-forget sends are accepted with no work (Send's
+		// behaviour), so there's nothing to do for them.
+		if (IsTravelRequest(packet))
+		{
+			await PaceFrameAsync(cancellationToken).ConfigureAwait(false);
+			StageFrame();
+		}
+	}
+
+	// Delay until at least FrameInterval has elapsed since the previous async-staged frame, so the
+	// caller's poll loop is paced like a real device's blocking read rather than looping flat-out.
+	private async ValueTask PaceFrameAsync(CancellationToken cancellationToken)
+	{
+		var interval = FrameInterval;
+		if (interval <= TimeSpan.Zero)
+			return;
+		if (_lastFrameStamp != 0)
+		{
+			var remaining = interval - Stopwatch.GetElapsedTime(_lastFrameStamp);
+			if (remaining > TimeSpan.Zero)
+				await Task.Delay(remaining, cancellationToken).ConfigureAwait(false);
+		}
+		_lastFrameStamp = Stopwatch.GetTimestamp();
+	}
+
+	public ValueTask<byte[]?> SendAndReceiveAsync(byte[] packet, int timeoutMs = 1000, CancellationToken cancellationToken = default)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		return new(SendAndReceive(packet, timeoutMs));
+	}
+
+	public async ValueTask<byte[]?> ReceiveCommandAsync(int timeoutMs = 1000, CancellationToken cancellationToken = default)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		lock (_gate)
+		{
+			if (_pending.Count > 0)
+				return _pending.Dequeue();
+		}
+		if (timeoutMs > 0)
+			await Task.Delay(timeoutMs, cancellationToken).ConfigureAwait(false);
+		return null;
+	}
+
+	public ValueTask FlushReadBufferAsync(CancellationToken cancellationToken = default)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
+		FlushReadBuffer();
+		return ValueTask.CompletedTask;
 	}
 
 	public void Dispose() { }

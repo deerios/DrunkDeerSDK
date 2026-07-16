@@ -13,6 +13,48 @@ internal sealed class ProtocolDef
 	/// in declaration order. Each entry is a specific pair, not a cross-product.
 	/// </summary>
 	public List<DiscoveryPair> Discovery { get; } = [];
+
+	/// <summary>
+	/// Physical key geometry per model+variant, loaded from protocol/geometry/*.yaml.
+	/// In declaration order across files.
+	/// </summary>
+	public List<GeometryDef> Geometries { get; } = [];
+}
+
+/// <summary>Physical key geometry for one model slug, split by layout variant.</summary>
+internal sealed class GeometryDef
+{
+	public string Slug { get; set; } = "";
+	public string BoardName { get; set; } = "";
+	public List<GeometryVariant> Variants { get; set; } = [];
+}
+
+/// <summary>Geometry for one variant (e.g. "ansi") plus any variant aliases that share it.</summary>
+internal sealed class GeometryVariant
+{
+	public string Variant { get; set; } = "";
+	public List<string> Aliases { get; set; } = [];
+	public List<GeometryKey> Keys { get; set; } = [];
+}
+
+/// <summary>One physical key: firmware slot, DDKey, legend, and KLE 1u placement.</summary>
+internal sealed class GeometryKey
+{
+	public string Key { get; set; } = "";
+	public int Slot { get; set; }
+	public string Legend { get; set; } = "";
+	public float X { get; set; }
+	public float Y { get; set; }
+	public float W { get; set; } = 1f;
+	public float H { get; set; } = 1f;
+
+	// Secondary rectangle for non-rectangular keys (ISO Enter). Null when unset.
+	public float? X2 { get; set; }
+	public float? Y2 { get; set; }
+	public float? W2 { get; set; }
+	public float? H2 { get; set; }
+
+	public bool HasSecondary => X2.HasValue;
 }
 
 /// <summary>A single (VID, PID) pair used to find candidate DrunkDeer command interfaces.</summary>
