@@ -28,7 +28,12 @@ public class GeometryTests
 	/// Add a board here when it gains a YAML.
 	/// </summary>
 	private static readonly string[] ModelsWithGeometry =
-		[ModelSlugs.A75, ModelSlugs.A75Ultra, ModelSlugs.G75, ModelSlugs.G65, ModelSlugs.G60];
+	[
+		ModelSlugs.A75, ModelSlugs.A75Ultra, ModelSlugs.A75Pro, ModelSlugs.A75Master,
+		ModelSlugs.G75,
+		ModelSlugs.G65, ModelSlugs.G65Lite, ModelSlugs.G65M1, ModelSlugs.G65M2, ModelSlugs.G65M3,
+		ModelSlugs.G60, ModelSlugs.G60V600,
+	];
 
 	[TestCaseSource(nameof(ModelsWithGeometry))]
 	public void HasLayout_AndIsNonEmpty(string slug)

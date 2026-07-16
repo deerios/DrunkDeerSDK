@@ -15,12 +15,16 @@
 #
 # Only ANSI is defined. ISO is omitted: LayoutG65 carries EUR_K42/EUR_K45 at slots
 # 75/85, but RgbG65 does not light them, so the ISO variant needs its own RGB table
-# and a hardware capture before its geometry can be emitted honestly. The G65
-# Lite/m1/m2/m3 slugs share LayoutG65 and RgbG65 exactly, but none has been checked
-# against a photo, so they are left out rather than assumed identical.
+# and a hardware capture before its geometry can be emitted honestly.
 geometry:
   g65:
     board_name: G65
+    # The Lite and m1/m2/m3 already share LayoutG65/RgbG65, and the vendor configurator
+    # lists a slot set for each that is identical to the G65's, element for element
+    # (its G65Lite/G65m1/G65m2/G65m3 carry USB 0x0B/0x02/0x05, 0x02/0x03, 0x10/0x01 and
+    # 0x12/0x01, matching their ModelRegistry entries). They answer with this geometry
+    # rather than four copies of it.
+    slug_aliases: [g65_lite, g65_m1, g65_m2, g65_m3]
     variants:
       ansi:
         # (15,1,1) is an alternate PID for the same ANSI hardware; share this geometry.

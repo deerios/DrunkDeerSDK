@@ -1,42 +1,23 @@
-# Physical key geometry for the DrunkDeer A75 (75% / 82-key), in KLE 1u key units.
+# Physical key geometry for the DrunkDeer A75 Master (75% / 82-key), in KLE 1u key units.
 #
-# Coordinate system: origin top-left, x grows right, y grows down, one unit = one
-# 1u keycap. `slot` is the firmware key index (must match KeyLayout for the model);
-# `key` is the DDKey; `legend` is a display string. w/h default to 1 when omitted.
-# Optional x2/y2/w2/h2 describe a secondary rectangle for non-rectangular keys
-# (e.g. an ISO Enter) and map to KeyInfo.Secondary.
+# Coordinate system and field meanings are as documented in a75.yaml.
 #
-# The alphanumeric block sits 0.25u below the function row, and the arrow cluster
-# steps down a further 0.25u from the rows beside it; both are visible in the
-# product layout drawing and are not artefacts of rounding.
+# The Master is the A75 board with two keys different, so the shape notes in a75.yaml all
+# apply here: 16.25 x 6.5, alphanumeric block 0.25u below the grouped function row, arrow
+# cluster stepped a further 0.25u down, and a rotary encoder above the nav column that is
+# not a key (no DDKey, no slot) and so emits no KeyInfo.
 #
-# The A75's rotary knob (top right, above Home at roughly x=15.25) is deliberately
-# absent: it is an encoder, not a key. It has no DDKey and no firmware slot in
-# KeyLayout.LayoutA75, so there is nothing to emit a KeyInfo for.
-#
-# Only the ANSI variant is defined. ISO is intentionally omitted for now: A75
-# firmware slot 75 (the ISO "#~" key) is labelled "u13" in KeyLayout.LayoutA75 and
-# has no DDKey, so its geometry cannot be emitted honestly without a hardware
-# capture. The G75 has its own file.
-#
-# The A75 Master is a physically different board despite the shared chassis -- an F13
-# at slot 15, Delete at slot 14 in the nav column, and no Home key -- so it has its own
-# layout table (KeyLayout.LayoutA75Master) and its own a75_master.yaml, not an alias.
+# What differs from the A75, and why it needs its own file rather than a slug_alias:
+#   - slot 15 is F13, at the top-right of the function row where the A75 has Delete;
+#   - slot 14 is Delete, at the top of the nav column where the A75 has Home;
+#   - there is no Home key at all, so the nav column runs Del / PgUp / PgDn / End.
+# Source: the vendor configurator's getA75Master(), which agrees element for element with
+# KeyLayout.RgbA75Master (that array was transcribed from it). See KeyLayout.LayoutA75Master.
 geometry:
-  a75:
-    board_name: A75
-    # The A75 Ultra and Pro are the same board physically -- same grouped function row,
-    # same knob, same stepped arrow cluster, same 82 keys -- and already share
-    # LayoutA75/RgbA75, so they answer with this geometry rather than copies of it.
-    # The Pro is confirmed against both its product photo (Del top-right of the F-row,
-    # knob above a Home/PgUp/PgDn/End nav column, bottom row ending in arrows with no
-    # right Ctrl, matching RgbA75 skipping slot 118) and the vendor configurator's own
-    # slot list, which is identical to the A75's element for element.
-    slug_aliases: [a75_ultra, a75_pro]
+  a75_master:
+    board_name: A75 Master
     variants:
       ansi:
-        # (11,1,1) is an alternate PID for the same ANSI hardware; share this geometry.
-        aliases: [ansi_alt]
         keys:
           # Function row (y = 0)
           - { slot: 0,   key: Escape,       legend: "Esc",   x: 0,     y: 0,    w: 1,    h: 1 }
@@ -52,7 +33,7 @@ geometry:
           - { slot: 11,  key: F10,          legend: "F10",   x: 10.75, y: 0 }
           - { slot: 12,  key: F11,          legend: "F11",   x: 11.75, y: 0 }
           - { slot: 13,  key: F12,          legend: "F12",   x: 12.75, y: 0 }
-          - { slot: 14,  key: Delete,       legend: "Del",   x: 14,    y: 0 }
+          - { slot: 15,  key: F13,          legend: "F13",   x: 14,    y: 0 }
 
           # Number row (y = 1.25)
           - { slot: 21,  key: Backtick,     legend: "`",     x: 0,     y: 1.25 }
@@ -69,7 +50,7 @@ geometry:
           - { slot: 32,  key: Minus,        legend: "-",     x: 11,    y: 1.25 }
           - { slot: 33,  key: Equal,        legend: "=",     x: 12,    y: 1.25 }
           - { slot: 34,  key: Backspace,    legend: "Bksp",  x: 13,    y: 1.25, w: 2,    h: 1 }
-          - { slot: 36,  key: Home,         legend: "Home",  x: 15.25, y: 1.25 }
+          - { slot: 14,  key: Delete,       legend: "Del",   x: 15.25, y: 1.25 }
 
           # QWERTY row (y = 2.25)
           - { slot: 42,  key: Tab,          legend: "Tab",   x: 0,     y: 2.25, w: 1.5,  h: 1 }

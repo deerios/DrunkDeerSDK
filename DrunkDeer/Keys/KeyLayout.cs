@@ -105,6 +105,35 @@ internal static class KeyLayout
 		"",
 	];
 
+	// The A75 Master is not an A75 variant. It carries an F13 at slot 15 where the A75 has
+	// Delete, its Delete sits at slot 14 in the nav column's top position, and it has no
+	// Home key -- so slot 36 is empty here where LayoutA75 has HOME. Everything else (the
+	// knob, the grouped function row, the stepped arrow cluster, all 82 keys) matches.
+	// Source: the vendor configurator's getA75Master(), which agrees element for element
+	// with RgbA75Master below -- that array was transcribed from it.
+	private static readonly string[] LayoutA75Master =
+	[
+		"ESC",    "",        "F1",     "F2",     "F3",      "F4",      "F5",
+		"F6",     "F7",      "F8",     "F9",     "F10",     "F11",     "F12",
+		"DELETE", "F13",     "",       "u1",     "u2",      "u3",      "u4",   // 14=Delete (nav column top), 15=F13 (top-right of F-row)
+        "SWUNG",  "1",       "2",      "3",      "4",       "5",       "6",
+		"7",      "8",       "9",      "0",      "MINUS",   "PLUS",    "BACK",
+		"",       "",        "",      "u5",     "u6",      "u7",      "u8",    // 36 empty: the Master has no Home key
+        "TAB",    "Q",       "W",      "E",      "R",       "T",       "Y",
+		"U",      "I",       "O",      "P",      "BRKTS_L", "BRKTS_R", "SLASH_K29",
+		"",       "PAGEUP",  "",       "u9",     "u10",     "u11",     "u12",  // 57=PgUp
+        "CAPS",   "A",       "S",      "D",      "F",       "G",       "H",
+		"J",      "K",       "L",      "COLON",  "QOTATN",  "u13",     "RETURN",
+		"",       "PAGEDW",  "",       "u15",    "u16",     "u17",     "u18",  // 78=PgDn
+        "SHF_L",  "EUR_K45", "Z",      "X",      "C",       "V",       "B",
+		"N",      "M",       "COMMA",  "PERIOD", "VIRGUE",  "u19",     "SHF_R",
+		"ARR_UP", "END",     "",       "u21",    "u22",     "u23",     "u24",  // 98=ArrowUp, 99=End
+        "CTRL_L", "WIN_L",   "ALT_L",  "u25",    "u26",     "u27",     "SPACE",
+		"u28",    "u29",     "u30",    "ALT_R",  "FN1",     "APP",     "",
+		"ARR_L",  "ARR_DW",  "ARR_R",  "CTRL_R", "u31",     "u32",     "u33",
+		"u34",
+	];
+
 	private static readonly int[] RgbA75 =
 	[
 		0,2,3,4,5,6,7,8,9,10,11,12,13,14,
@@ -178,8 +207,8 @@ internal static class KeyLayout
 	{
 		ModelSlugs.A75       or
 		ModelSlugs.A75Pro    or
-		ModelSlugs.A75Ultra  or
-		ModelSlugs.A75Master => LayoutA75,
+		ModelSlugs.A75Ultra => LayoutA75,
+		ModelSlugs.A75Master => LayoutA75Master,
 		ModelSlugs.G75   or
 		ModelSlugs.G75Jp => LayoutG75,
 		ModelSlugs.G65       or
@@ -204,8 +233,10 @@ internal static class KeyLayout
 	};
 
 	/// <summary>
-	/// Returns the sorted array of layout indices that have physical RGB LEDs
-	/// for the given model and variant.
+	/// Returns the array of layout indices that have physical RGB LEDs for the given
+	/// model and variant. Treat it as a set, not a sequence: most are ascending, but
+	/// RgbA75Master is in the vendor's display order. Nothing depends on the order --
+	/// each RgbEntry carries its own grid position -- so do not "fix" it to match.
 	/// </summary>
 	public static int[] GetRgbIndices(string modelSlug, string variant) =>
 		(modelSlug, variant) switch
