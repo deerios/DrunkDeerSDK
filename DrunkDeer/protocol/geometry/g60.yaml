@@ -16,13 +16,16 @@
 #
 # Only ANSI is defined. ISO is omitted: LayoutG60 carries EUR_K42/EUR_K45 at slots
 # 75/85 but RgbG60 does not light them, so ISO needs its own RGB table and a capture
-# first. g60_v600 shares LayoutG60 and RgbG60 exactly but has not been checked
-# against a photo, so it is left out rather than assumed identical. x60_future also
-# borrows these slot tables, but that borrowing is explicitly unverified in
-# KeyLayout -- see that model's own file.
+# first. x60_future used to borrow these slot tables; it no longer does -- it is a 64-key
+# board with its own LayoutX60/RgbX60 and its own x60_future.yaml.
 geometry:
   g60:
     board_name: G60
+    # g60_v600 is the vendor configurator's "G60m1" (USB 0x0B/0x03/0x03, matching its
+    # ModelRegistry entry). The vendor's own slot list for it is identical to the G60's,
+    # element for element, and it already shares LayoutG60/RgbG60 -- so it answers with
+    # this geometry rather than a copy of it.
+    slug_aliases: [g60_v600]
     variants:
       ansi:
         keys:

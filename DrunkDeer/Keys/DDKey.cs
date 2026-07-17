@@ -21,6 +21,12 @@ public enum DDKey
 {
 	Escape,
 	F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+	// F13-F24 are the rest of the range Windows recognises. Only F13 is on any board we
+	// know of (the A75 Master, slot 15); the others have no slot in any layout table, so
+	// BuildIndexMap drops them and GetKeyIndex rejects them until a board carries one.
+	// They sit here rather than at the end of the enum because DDKey is ordered
+	// physically and KeyArgParser.Range relies on it -- "F1-F24" must not sweep the board.
+	F13, F14, F15, F16, F17, F18, F19, F20, F21, F22, F23, F24,
 	PrintScreen,
 
 	Backtick,
@@ -80,6 +86,18 @@ internal static class KeyLayoutNames
 			[DDKey.F10]           = "F10",
 			[DDKey.F11]           = "F11",
 			[DDKey.F12]           = "F12",
+			[DDKey.F13]           = "F13",
+			[DDKey.F14]           = "F14",
+			[DDKey.F15]           = "F15",
+			[DDKey.F16]           = "F16",
+			[DDKey.F17]           = "F17",
+			[DDKey.F18]           = "F18",
+			[DDKey.F19]           = "F19",
+			[DDKey.F20]           = "F20",
+			[DDKey.F21]           = "F21",
+			[DDKey.F22]           = "F22",
+			[DDKey.F23]           = "F23",
+			[DDKey.F24]           = "F24",
 			[DDKey.PrintScreen]   = "PRINT",
 
 			[DDKey.Backtick]      = "SWUNG",
