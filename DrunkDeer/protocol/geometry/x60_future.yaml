@@ -1,0 +1,109 @@
+# Physical key geometry for the DrunkDeer X60 Future (60% / 64-key), in KLE 1u key units.
+#
+# Coordinate system and field meanings are as documented in a75.yaml.
+#
+# A flat 15x5 grid, like the G60, but with four more keys: this is a 60% with an arrow
+# cluster worked into the right of the bottom two rows. Esc takes the backtick position
+# at the head of the number row (LayoutX60 has no SWUNG token); ` is an Fn layer key.
+#
+# It is NOT a G60 and does not share its tables. Esc is slot 0 here, not slot 21; Delete
+# is slot 14, ArrowUp is 98, the arrows are 119-121, and slots 117 (Menu/FN2) and 118
+# (right Ctrl) do not exist on this board at all. Mapping it to LayoutG60 was a real bug:
+# that table has no ARR_* or DELETE tokens, so those keys were unaddressable and
+# GetKeyIndex handed out G60 slots for keys the X60 does not have.
+#
+# Sources, in agreement: the vendor configurator's getX60() (64 slots with legends) and
+# the product render x60_future_layout.webp. Both show the shift row ending
+# "/ ? | Shift | Up | Del" and the bottom row ending "Alt Fn < v >".
+#
+# Measured off that render (pitch 61.71 px/u; the right edges of Backspace, Backslash and
+# Enter all land within a pixel of each other, which is the confirmation that the rows end
+# at 15 and the standard ANSI widths hold for rows 0-2).
+#
+# The shift row is the one that is NOT standard ANSI, and deliberately so: fitting 14 keys
+# into 15u forces a 2u left Shift and a 1u right Shift. Measured key centres put left Shift
+# at 0.985u (2u -> 1.0; a 2.25u key would centre at 1.125) and right Shift at 12.50u, with
+# every alpha landing within 0.01u of its integer position. Do not "correct" these to
+# 2.25/1.75 -- the row would then be 16u and overhang the board.
+#
+# Likewise the bottom row: right Alt and Fn are 1u, not the G60's 1.25u, so that the three
+# arrows finish flush at x=15.
+geometry:
+  x60_future:
+    board_name: X60 Future
+    variants:
+      ansi:
+        keys:
+          # Number row (y = 0)
+          - { slot: 0,   key: Escape,       legend: "Esc",   x: 0,     y: 0, w: 1, h: 1 }
+          - { slot: 22,  key: D1,           legend: "1",     x: 1,     y: 0 }
+          - { slot: 23,  key: D2,           legend: "2",     x: 2,     y: 0 }
+          - { slot: 24,  key: D3,           legend: "3",     x: 3,     y: 0 }
+          - { slot: 25,  key: D4,           legend: "4",     x: 4,     y: 0 }
+          - { slot: 26,  key: D5,           legend: "5",     x: 5,     y: 0 }
+          - { slot: 27,  key: D6,           legend: "6",     x: 6,     y: 0 }
+          - { slot: 28,  key: D7,           legend: "7",     x: 7,     y: 0 }
+          - { slot: 29,  key: D8,           legend: "8",     x: 8,     y: 0 }
+          - { slot: 30,  key: D9,           legend: "9",     x: 9,     y: 0 }
+          - { slot: 31,  key: D0,           legend: "0",     x: 10,    y: 0 }
+          - { slot: 32,  key: Minus,        legend: "-",     x: 11,    y: 0 }
+          - { slot: 33,  key: Equal,        legend: "=",     x: 12,    y: 0 }
+          - { slot: 34,  key: Backspace,    legend: "Bksp",  x: 13,    y: 0, w: 2,    h: 1 }
+
+          # QWERTY row (y = 1)
+          - { slot: 42,  key: Tab,          legend: "Tab",   x: 0,     y: 1, w: 1.5,  h: 1 }
+          - { slot: 43,  key: Q,            legend: "Q",     x: 1.5,   y: 1 }
+          - { slot: 44,  key: W,            legend: "W",     x: 2.5,   y: 1 }
+          - { slot: 45,  key: E,            legend: "E",     x: 3.5,   y: 1 }
+          - { slot: 46,  key: R,            legend: "R",     x: 4.5,   y: 1 }
+          - { slot: 47,  key: T,            legend: "T",     x: 5.5,   y: 1 }
+          - { slot: 48,  key: Y,            legend: "Y",     x: 6.5,   y: 1 }
+          - { slot: 49,  key: U,            legend: "U",     x: 7.5,   y: 1 }
+          - { slot: 50,  key: I,            legend: "I",     x: 8.5,   y: 1 }
+          - { slot: 51,  key: O,            legend: "O",     x: 9.5,   y: 1 }
+          - { slot: 52,  key: P,            legend: "P",     x: 10.5,  y: 1 }
+          - { slot: 53,  key: LeftBracket,  legend: "[",     x: 11.5,  y: 1 }
+          - { slot: 54,  key: RightBracket, legend: "]",     x: 12.5,  y: 1 }
+          - { slot: 55,  key: Backslash,    legend: "\\",    x: 13.5,  y: 1, w: 1.5,  h: 1 }
+
+          # Home row (y = 2)
+          - { slot: 63,  key: CapsLock,     legend: "Caps",  x: 0,     y: 2, w: 1.75, h: 1 }
+          - { slot: 64,  key: A,            legend: "A",     x: 1.75,  y: 2 }
+          - { slot: 65,  key: S,            legend: "S",     x: 2.75,  y: 2 }
+          - { slot: 66,  key: D,            legend: "D",     x: 3.75,  y: 2 }
+          - { slot: 67,  key: F,            legend: "F",     x: 4.75,  y: 2 }
+          - { slot: 68,  key: G,            legend: "G",     x: 5.75,  y: 2 }
+          - { slot: 69,  key: H,            legend: "H",     x: 6.75,  y: 2 }
+          - { slot: 70,  key: J,            legend: "J",     x: 7.75,  y: 2 }
+          - { slot: 71,  key: K,            legend: "K",     x: 8.75,  y: 2 }
+          - { slot: 72,  key: L,            legend: "L",     x: 9.75,  y: 2 }
+          - { slot: 73,  key: Semicolon,    legend: ";",     x: 10.75, y: 2 }
+          - { slot: 74,  key: Quote,        legend: "'",     x: 11.75, y: 2 }
+          - { slot: 76,  key: Enter,        legend: "Enter", x: 12.75, y: 2, w: 2.25, h: 1 }
+
+          # Shift row (y = 3) -- 2u left Shift and 1u right Shift; see the note above.
+          - { slot: 84,  key: LeftShift,    legend: "Shift", x: 0,     y: 3, w: 2,    h: 1 }
+          - { slot: 86,  key: Z,            legend: "Z",     x: 2,     y: 3 }
+          - { slot: 87,  key: X,            legend: "X",     x: 3,     y: 3 }
+          - { slot: 88,  key: C,            legend: "C",     x: 4,     y: 3 }
+          - { slot: 89,  key: V,            legend: "V",     x: 5,     y: 3 }
+          - { slot: 90,  key: B,            legend: "B",     x: 6,     y: 3 }
+          - { slot: 91,  key: N,            legend: "N",     x: 7,     y: 3 }
+          - { slot: 92,  key: M,            legend: "M",     x: 8,     y: 3 }
+          - { slot: 93,  key: Comma,        legend: ",",     x: 9,     y: 3 }
+          - { slot: 94,  key: Period,       legend: ".",     x: 10,    y: 3 }
+          - { slot: 95,  key: Slash,        legend: "/",     x: 11,    y: 3 }
+          - { slot: 97,  key: RightShift,   legend: "Shift", x: 12,    y: 3, w: 1,    h: 1 }
+          - { slot: 98,  key: ArrowUp,      legend: "Up",    x: 13,    y: 3 }
+          - { slot: 14,  key: Delete,       legend: "Del",   x: 14,    y: 3 }
+
+          # Bottom row (y = 4)
+          - { slot: 105, key: LeftCtrl,     legend: "Ctrl",  x: 0,     y: 4, w: 1.25, h: 1 }
+          - { slot: 106, key: LeftWin,      legend: "Win",   x: 1.25,  y: 4, w: 1.25, h: 1 }
+          - { slot: 107, key: LeftAlt,      legend: "Alt",   x: 2.5,   y: 4, w: 1.25, h: 1 }
+          - { slot: 111, key: Space,        legend: "",      x: 3.75,  y: 4, w: 6.25, h: 1 }
+          - { slot: 115, key: RightAlt,     legend: "Alt",   x: 10,    y: 4 }
+          - { slot: 116, key: Fn1,          legend: "Fn",    x: 11,    y: 4 }
+          - { slot: 119, key: ArrowLeft,    legend: "Left",  x: 12,    y: 4 }
+          - { slot: 120, key: ArrowDown,    legend: "Down",  x: 13,    y: 4 }
+          - { slot: 121, key: ArrowRight,   legend: "Right", x: 14,    y: 4 }

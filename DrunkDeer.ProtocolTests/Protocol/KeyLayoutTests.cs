@@ -18,11 +18,38 @@ public class KeyLayoutTests
 		Assert.That(x60Layout, Is.Not.EqualTo(a75Layout));
 	}
 
+	/// <summary>
+	/// The X60 Future used to borrow LayoutG60, and a test here used to pin that. It was
+	/// wrong: the X60 is a 64-key board whose Esc is slot 0 (the G60 puts Esc at 21) and
+	/// which has a Del and an arrow cluster the G60 has no tokens for at all. It now has
+	/// its own table, so what is worth pinning is that it does NOT match the G60's.
+	/// </summary>
 	[Test]
-	public void GetLayout_X60Future_MatchesG60()
+	public void GetLayout_X60Future_DiffersFromG60() =>
+		Assert.That(KeyLayout.GetLayout(ModelSlugs.X60Future),
+			Is.Not.EqualTo(KeyLayout.GetLayout(ModelSlugs.G60)));
+
+	[Test]
+	public void GetLayout_X60Future_HasTheKeysTheBoardActuallyHas()
 	{
-		Assert.That(KeyLayout.GetLayout(ModelSlugs.X60Future), Is.EqualTo(KeyLayout.GetLayout(ModelSlugs.G60)));
+		var x60 = KeyLayout.GetLayout(ModelSlugs.X60Future);
+		Assert.Multiple(() =>
+		{
+			Assert.That(x60[0], Is.EqualTo("ESC"), "Esc is slot 0, not the G60's slot 21");
+			Assert.That(x60[21], Is.Empty, "the X60 has no backtick key");
+			Assert.That(x60[14], Is.EqualTo("DELETE"), "Del sits right of ArrowUp on the shift row");
+			Assert.That(x60[98], Is.EqualTo("ARR_UP"));
+			Assert.That(x60[119], Is.EqualTo("ARR_L"));
+			Assert.That(x60[120], Is.EqualTo("ARR_DW"));
+			Assert.That(x60[121], Is.EqualTo("ARR_R"));
+			Assert.That(x60[117], Is.Empty, "the X60 has no Menu/Fn2 key");
+			Assert.That(x60[118], Is.Empty, "the X60 has no right Ctrl");
+		});
 	}
+
+	[Test]
+	public void GetRgbIndices_X60Future_Lights64Keys() =>
+		Assert.That(KeyLayout.GetRgbIndices(ModelSlugs.X60Future, "ansi"), Has.Length.EqualTo(64));
 
 	[Test]
 	public void GetRgbIndices_X60Future_DiffersFromA75()

@@ -33,6 +33,7 @@ public class GeometryTests
 		ModelSlugs.G75,
 		ModelSlugs.G65, ModelSlugs.G65Lite, ModelSlugs.G65M1, ModelSlugs.G65M2, ModelSlugs.G65M3,
 		ModelSlugs.G60, ModelSlugs.G60V600,
+		ModelSlugs.X60Future,
 	];
 
 	[TestCaseSource(nameof(ModelsWithGeometry))]

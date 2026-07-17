@@ -16,8 +16,8 @@
 #
 # Only ANSI is defined. ISO is omitted: LayoutG60 carries EUR_K42/EUR_K45 at slots
 # 75/85 but RgbG60 does not light them, so ISO needs its own RGB table and a capture
-# first. x60_future also borrows these slot tables, but that borrowing is explicitly
-# unverified in KeyLayout -- see that model's own file.
+# first. x60_future used to borrow these slot tables; it no longer does -- it is a 64-key
+# board with its own LayoutX60/RgbX60 and its own x60_future.yaml.
 geometry:
   g60:
     board_name: G60

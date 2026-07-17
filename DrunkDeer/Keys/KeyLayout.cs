@@ -134,6 +134,36 @@ internal static class KeyLayout
 		"u34",
 	];
 
+	// The X60 Future is a 64-key board: a 60% with an arrow cluster worked into the bottom
+	// two rows. It is not a G60 despite having shared its tables until now -- Esc sits at
+	// slot 0 (not 21, the backtick position the G60 uses), Delete is slot 14, ArrowUp is 98
+	// and the arrows are 119-121, while slot 117 (FN2/Menu) and 118 (CTRL_R) do not exist
+	// on it at all. Source: the vendor configurator's getX60(), independently confirmed
+	// against the product render in x60_future_layout.webp -- both agree the shift row ends
+	// "/ ? | Shift | Up | Del" and the bottom row ends "Alt Fn < v >".
+	private static readonly string[] LayoutX60 =
+	[
+		"ESC",    "",        "",      "",       "",        "",        "",     // 0=Esc (the G60 puts Esc at 21; the X60 has no backtick key)
+		"",       "",        "",      "",       "",        "",        "",
+		"DELETE", "",        "",      "",       "",        "",        "",     // 14=Delete (right of ArrowUp on the shift row)
+		"",       "1",       "2",     "3",      "4",       "5",       "6",    // 21 empty: no backtick
+		"7",      "8",       "9",     "0",      "MINUS",   "PLUS",    "BACK",
+		"",       "",        "",      "",       "",        "",        "",
+		"TAB",    "Q",       "W",     "E",      "R",       "T",       "Y",
+		"U",      "I",       "O",     "P",      "BRKTS_L", "BRKTS_R", "SLASH_K29",
+		"",       "",        "",      "",       "",        "",        "",
+		"CAPS",   "A",       "S",     "D",      "F",       "G",       "H",
+		"J",      "K",       "L",     "COLON",  "QOTATN",  "EUR_K42", "RETURN",
+		"",       "",        "",      "",       "",        "",        "",
+		"SHF_L",  "EUR_K45", "Z",     "X",      "C",       "V",       "B",
+		"N",      "M",       "COMMA", "PERIOD", "VIRGUE",  "",        "SHF_R",
+		"ARR_UP", "",        "",      "",       "",        "",        "",     // 98=ArrowUp
+		"CTRL_L", "WIN_L",   "ALT_L", "",       "",        "",        "SPACE",
+		"",       "",        "",      "ALT_R",  "FN1",     "",        "",     // 117/118 empty: no Menu, no right Ctrl
+		"ARR_L",  "ARR_DW",  "ARR_R", "",       "",        "",        "",     // 119-121=arrows
+		"",
+	];
+
 	private static readonly int[] RgbA75 =
 	[
 		0,2,3,4,5,6,7,8,9,10,11,12,13,14,
@@ -202,6 +232,16 @@ internal static class KeyLayout
 		105,106,107,111,115,116,117,118,
 	];
 
+	private static readonly int[] RgbX60 =
+	[
+		0,14,
+		22,23,24,25,26,27,28,29,30,31,32,33,34,
+		42,43,44,45,46,47,48,49,50,51,52,53,54,55,
+		63,64,65,66,67,68,69,70,71,72,73,74,76,
+		84,86,87,88,89,90,91,92,93,94,95,97,98,
+		105,106,107,111,115,116,119,120,121,
+	];
+
 	/// <summary>Returns the layout string array for the given model slug.</summary>
 	public static string[] GetLayout(string modelSlug) => modelSlug switch
 	{
@@ -216,17 +256,9 @@ internal static class KeyLayout
 		ModelSlugs.G65M1     or
 		ModelSlugs.G65M2     or
 		ModelSlugs.G65M3 => LayoutG65,
-		// BUG: X60 Future is mapped here for want of anything better, but LayoutG60 is known
-		// to be wrong for it, not merely unverified. The shipping X60 Future has arrow keys
-		// and a Del, and LayoutG60 has no ARR_* or DELETE tokens at all -- so GetKeyIndex
-		// cannot resolve those keys, and every slot from the point they appear is suspect.
-		// It is a ~64-key board against LayoutG60's 61. Actuation and lighting addressed by
-		// DDKey will land on the wrong physical keys. Fixing it needs a capture of the real
-		// slot map; until then X60 Future geometry is deliberately not defined, so the board
-		// draws as "no layout" rather than as a plausible lie. See README verification table.
 		ModelSlugs.G60   or
-		ModelSlugs.G60V600 or
-		ModelSlugs.X60Future => LayoutG60,
+		ModelSlugs.G60V600 => LayoutG60,
+		ModelSlugs.X60Future => LayoutX60,
 		_ => throw new NotSupportedException(
 			$"No layout table for model '{modelSlug}'. Add a case to KeyLayout.GetLayout " +
 			"rather than falling back to another model's table."),
@@ -253,10 +285,9 @@ internal static class KeyLayout
 			(ModelSlugs.G65M1, _)      or
 			(ModelSlugs.G65M2, _)      or
 			(ModelSlugs.G65M3, _) => RgbG65,
-			// TODO: verify via capture, same caveat as GetLayout above.
 			(ModelSlugs.G60, _)    or
-			(ModelSlugs.G60V600, _) or
-			(ModelSlugs.X60Future, _) => RgbG60,
+			(ModelSlugs.G60V600, _) => RgbG60,
+			(ModelSlugs.X60Future, _) => RgbX60,
 			_ => throw new NotSupportedException(
 				$"No RGB index table for model '{modelSlug}' variant '{variant}'. Add a case to " +
 				"KeyLayout.GetRgbIndices rather than falling back to another model's table."),
